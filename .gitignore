@@ -1,0 +1,7 @@
+node_modules/
+Frontend/release/
+*.exe
+*.zip
+.env
+Frontend/release/
+HWH-POS-Portable/
