@@ -15,3 +15,9 @@ db.version(2).stores({
   sales: '++id, invoiceNumber, createdAt, syncStatus', // syncStatus: 'pending', 'synced'
   khatas: '++id, _id, title, customerId' // Cache for POS Khata selection
 });
+
+export const resetDatabase = async () => {
+  await db.transaction('rw', db.dailylogs, db.products, db.categories, db.sales, db.khatas, async () => {
+    await Promise.all(db.tables.map(table => table.clear()));
+  });
+};

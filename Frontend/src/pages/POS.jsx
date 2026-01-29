@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Box, Grid, Paper, Typography, TextField, Button, IconButton, Chip, Dialog, DialogTitle, DialogContent, DialogActions, Autocomplete } from '@mui/material';
-import { FaPlus, FaMinus, FaTrash, FaShoppingCart, FaMoneyBillWave, FaMobileAlt, FaCreditCard, FaPrint, FaBook } from 'react-icons/fa';
+import { FaPlus, FaMinus, FaTrash, FaShoppingCart, FaMoneyBillWave, FaMobileAlt, FaCreditCard, FaPrint, FaBook, FaSync } from 'react-icons/fa';
 import api from '../services/api';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db';
+import { db, resetDatabase } from '../db';
 import toast from 'react-hot-toast';
 
 import { getKhatas, createCustomer, createKhata, getKhata } from '../services/khataService';
@@ -116,15 +116,22 @@ const POS = () => {
     for (const sale of pendingSales) {
       try {
         // Remove local ID and sync status before sending
-        const { id, syncStatus, invoiceNumber, ...saleData } = sale;
+        const { id, syncStatus, invoiceNumber, items, ...rest } = sale;
         
-        // If it was an offline invoice number, the server will generate a new one, 
-        // or we can send it if backend supports it. Usually backend generates it.
+        // Map items to API format (clean up extra offline fields)
+        const apiItems = items.map(i => ({
+          productId: i.productId || i._id,
+          quantity: i.quantity
+        }));
+
+        const res = await api.post('/sales', { ...rest, items: apiItems });
         
-        await api.post('/sales', saleData);
-        
-        // Update local status
-        await db.sales.update(id, { syncStatus: 'synced' });
+        // Update local status AND replace temp ID/Invoice with Server's
+        await db.sales.update(id, { 
+          syncStatus: 'synced',
+          invoiceNumber: res.data.sale.invoiceNumber,
+          _id: res.data.sale._id
+        });
         
         // Optional: Delete synced sales from local DB to save space, 
         // or keep them for offline history viewing.
@@ -146,6 +153,30 @@ const POS = () => {
     if (navigator.onLine) syncSales();
     return () => { window.removeEventListener('online', handleStatus); window.removeEventListener('offline', handleStatus); };
   }, []);
+
+  // SESSION CHECK: Clear DB if user changes
+  useEffect(() => {
+    const checkSession = async () => {
+      const token = localStorage.getItem('token');
+      const lastToken = localStorage.getItem('db_token');
+      
+      if (token && lastToken && token !== lastToken) {
+        await resetDatabase();
+        localStorage.setItem('db_token', token);
+        window.location.reload();
+      } else if (token) {
+        localStorage.setItem('db_token', token);
+      }
+    };
+    checkSession();
+  }, []);
+
+  const handleManualReset = async () => {
+    if (window.confirm('Reload data from server? This will clear local cache.')) {
+      await resetDatabase();
+      window.location.reload();
+    }
+  };
 
   const handleCreateKhata = async () => {
     try {
@@ -322,6 +353,15 @@ const POS = () => {
       if (navigator.onLine) {
         const res = await api.post('/sales', saleData);
         saleResult = res.data.sale;
+        
+        // Ensure items have names for receipt/local DB (in case backend doesn't populate immediately)
+        if (saleResult.items && saleResult.items.length > 0 && !saleResult.items[0].productName) {
+           saleResult.items = saleResult.items.map((item, idx) => ({
+             ...item,
+             productName: cart[idx]?.name || 'Item'
+           }));
+        }
+
         // Save to DB as synced for history
         await db.sales.add({ ...saleResult, syncStatus: 'synced' });
       } else {
@@ -332,19 +372,39 @@ const POS = () => {
           total: total,
           subtotal: subtotal,
           createdAt: new Date().toISOString(),
-          items: cart.map(item => ({ ...item, productName: item.name, itemTotal: item.sellPrice * item.quantity })),
+          items: cart.map(item => ({ 
+            ...item, 
+            productId: item._id, // Critical for stock calculation
+            productName: item.name, 
+            itemTotal: item.sellPrice * item.quantity 
+          })),
           syncStatus: 'pending'
         };
         
         // Transaction to save sale AND update local stock immediately
-        await db.transaction('rw', db.sales, db.products, async () => {
-          await db.sales.add(saleResult);
+        await db.transaction('rw', db.sales, db.products, db.khatas, async () => {
+          // 1. Update Stock
           for (const item of cart) {
             const product = await db.products.get({ _id: item._id });
             if (product) {
               await db.products.update(product.id, { stock: product.stock - item.quantity });
             }
           }
+
+          // 2. Update Khata Balance Locally (So next receipt shows correct balance)
+          if (paymentMethod === 'Khata' && selectedKhata?._id) {
+            const khata = await db.khatas.get({ _id: selectedKhata._id });
+            if (khata) {
+              const change = total - (Number(paidAmount) || 0);
+              const newRemaining = (khata.remainingAmount || 0) + change;
+              
+              await db.khatas.update(khata.id, { remainingAmount: newRemaining });
+              saleResult.khataRemainingAfterSale = newRemaining; // For Receipt
+            }
+          }
+
+          // 3. Save Sale
+          await db.sales.add(saleResult);
         });
         
         toast.success('Saved Offline (Will sync when online)');
@@ -590,8 +650,9 @@ const POS = () => {
 
       {/* NORMAL UI */}
       <Box sx={{ '@media print': { display: 'none' } }}>
-        <Typography variant="h4" fontWeight={700} mb={3}>
+        <Typography variant="h4" fontWeight={700} mb={3} sx={{ display: 'flex', alignItems: 'center' }}>
           Point of Sale
+          <IconButton onClick={handleManualReset} sx={{ ml: 2 }} title="Reset Data" color="primary"><FaSync /></IconButton>
           {!isOnline && <Chip label="OFFLINE MODE" color="error" sx={{ ml: 2 }} />}
         </Typography>
 

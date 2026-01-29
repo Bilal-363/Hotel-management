@@ -77,29 +77,12 @@ app.use('/api/dashboard', require('./routes/dashboardRoutes'));
 app.use('/api/khata', require('./routes/khataRoutes'));
 app.use('/api/dailylogs', require('./routes/dailyLogRoutes'));
 
-// 404 Handler
-// Serve Frontend Static Files in Production
-// Serve Frontend Static Files in Production
-// (path, isPkg, basePath already defined at top)
-
-const frontendPath = path.join(basePath, 'frontend');
-app.use(express.static(frontendPath));
-
-// Handle React Routing (return index.html for all non-API routes)
-app.get(/(.*)/, (req, res) => {
-  // If it's an API call that wasn't handled, it will fall through to 404 via next() 
-  // actually 'get *' catches everything. We need to be careful.
-  // Better approach: Check if it starts with /api
-  if (req.url.startsWith('/api')) {
-    return res.status(404).json({
-      success: false,
-      message: 'API Route not found'
-    });
-  }
-
-  // Check if file exists, if not send index.html
-  // Express static already handles files. So this is just for SPA routing.
-  res.sendFile(path.join(frontendPath, 'index.html'));
+// 404 Handler for unmatched routes
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'API Route not found'
+  });
 });
 
 // Error Handler

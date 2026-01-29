@@ -4,7 +4,7 @@ import { FaCalendar, FaSave, FaHistory, FaTrash, FaSearch } from 'react-icons/fa
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db';
+import { db, resetDatabase } from '../db';
 
 const DailyLog = () => {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -85,6 +85,23 @@ const DailyLog = () => {
       window.removeEventListener('online', handleStatusChange);
       window.removeEventListener('offline', handleStatusChange);
     };
+  }, []);
+
+  // SESSION CHECK
+  useEffect(() => {
+    const checkSession = async () => {
+      const token = localStorage.getItem('token');
+      const lastToken = localStorage.getItem('db_token');
+      
+      if (token && lastToken && token !== lastToken) {
+        await resetDatabase();
+        localStorage.setItem('db_token', token);
+        window.location.reload();
+      } else if (token) {
+        localStorage.setItem('db_token', token);
+      }
+    };
+    checkSession();
   }, []);
 
   // Update form when date changes or logs load

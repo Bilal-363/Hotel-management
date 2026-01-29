@@ -4,7 +4,7 @@ import { FaReceipt, FaEye, FaCalendar, FaTrash } from 'react-icons/fa';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db';
+import { db, resetDatabase } from '../db';
 
 const Sales = () => {
   // const [sales, setSales] = useState([]); // Removed local state
@@ -32,8 +32,45 @@ const Sales = () => {
     fetchSales();
   }, []);
 
+  // SESSION CHECK
+  useEffect(() => {
+    const checkSession = async () => {
+      const token = localStorage.getItem('token');
+      const lastToken = localStorage.getItem('db_token');
+      
+      if (token && lastToken && token !== lastToken) {
+        await resetDatabase();
+        localStorage.setItem('db_token', token);
+        window.location.reload();
+      } else if (token) {
+        localStorage.setItem('db_token', token);
+      }
+    };
+    checkSession();
+  }, []);
+
   const fetchSales = async () => {
     try {
+      // 1. PUSH: Send pending offline sales to server first
+      if (navigator.onLine) {
+        const pendingSales = await db.sales.where('syncStatus').equals('pending').toArray();
+        for (const sale of pendingSales) {
+          try {
+            const { id, syncStatus, invoiceNumber, items, ...rest } = sale;
+            const apiItems = items.map(i => ({ productId: i.productId || i._id, quantity: i.quantity }));
+            
+            const res = await api.post('/sales', { ...rest, items: apiItems });
+            
+            await db.sales.update(id, { 
+              syncStatus: 'synced',
+              invoiceNumber: res.data.sale.invoiceNumber,
+              _id: res.data.sale._id
+            });
+          } catch (err) { console.error("Sync failed for sale", sale.invoiceNumber); }
+        }
+      }
+
+      // 2. PULL: Fetch latest data from server
       let url = '/sales';
       if (startDate && endDate) {
         url += `?startDate=${startDate}&endDate=${endDate}`;
@@ -71,18 +108,21 @@ const Sales = () => {
 
 
   const handleDelete = async () => {
-    if (!selectedSale?._id) return;
-    if (!window.confirm(`Are you sure you want to delete Invoice #${selectedSale.invoiceNumber}? This will revert stock and any Khata transactions.`)) {
+    if (!selectedSale) return;
+    if (!window.confirm(`Delete Invoice #${selectedSale.invoiceNumber}?`)) {
       return;
     }
 
     try {
-      await api.delete(`/sales/${selectedSale._id}`);
+      // If it has a server ID, delete from server
+      if (selectedSale._id) {
+        await api.delete(`/sales/${selectedSale._id}`);
+      }
       
       // Remove from local DB
-      const localSale = await db.sales.where('invoiceNumber').equals(selectedSale.invoiceNumber).first();
-      if (localSale) {
-        await db.sales.delete(localSale.id);
+      // We use the local 'id' which is always present
+      if (selectedSale.id) {
+        await db.sales.delete(selectedSale.id);
       }
 
       setDetailModal(false);
@@ -98,18 +138,18 @@ const Sales = () => {
   const handleSelectAll = (e) => {
     setSelectAll(e.target.checked);
     if (e.target.checked) {
-      setSelectedSales(sales.map(s => s._id));
+      setSelectedSales(sales.map(s => s.id)); // Use Local ID
     } else {
       setSelectedSales([]);
     }
   };
 
-  const handleSelectSale = (saleId) => {
-    if (selectedSales.includes(saleId)) {
-      setSelectedSales(selectedSales.filter(id => id !== saleId));
+  const handleSelectSale = (localId) => {
+    if (selectedSales.includes(localId)) {
+      setSelectedSales(selectedSales.filter(id => id !== localId));
       setSelectAll(false);
     } else {
-      const newSelected = [...selectedSales, saleId];
+      const newSelected = [...selectedSales, localId];
       setSelectedSales(newSelected);
       if (newSelected.length === sales.length) {
         setSelectAll(true);
@@ -120,9 +160,20 @@ const Sales = () => {
   const handleBulkDelete = async () => {
     if (selectedSales.length === 0) return;
 
-    if (window.confirm(`Are you sure you want to delete ${selectedSales.length} selected invoices? This prevents stock/khata reversal for ALL selected items.`)) {
+    if (window.confirm(`Delete ${selectedSales.length} selected invoices?`)) {
       try {
-        await Promise.all(selectedSales.map(id => api.delete(`/sales/${id}`)));
+        // Filter sales to find which ones need API calls
+        const salesToDelete = sales.filter(s => selectedSales.includes(s.id));
+        
+        const apiDeletes = salesToDelete
+          .filter(s => s._id) // Only those with server ID
+          .map(s => api.delete(`/sales/${s._id}`));
+          
+        await Promise.all(apiDeletes);
+        
+        // Delete all from local DB
+        await db.sales.bulkDelete(selectedSales);
+        
         toast.success(`${selectedSales.length} invoices deleted successfully`);
         setSelectedSales([]);
         setSelectAll(false);
@@ -192,11 +243,11 @@ const Sales = () => {
             </TableHead>
             <TableBody>
               {sales.map((sale) => (
-                <TableRow key={sale._id} selected={selectedSales.includes(sale._id)}>
+                <TableRow key={sale.id} selected={selectedSales.includes(sale.id)}>
                   <TableCell padding="checkbox">
                     <Checkbox
-                      checked={selectedSales.includes(sale._id)}
-                      onChange={() => handleSelectSale(sale._id)}
+                      checked={selectedSales.includes(sale.id)}
+                      onChange={() => handleSelectSale(sale.id)}
                     />
                   </TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>
@@ -218,8 +269,13 @@ const Sales = () => {
                       // We use a timeout to let state update or just open a separate confirm
                       // But since we use the modal for details, we can also put a delete button INSIDE the modal
                       // Or just trigger it here directly.
-                      if (window.confirm(`Are you sure you want to delete Invoice #${sale.invoiceNumber}?`)) {
-                        api.delete(`/sales/${sale._id}`).then(() => fetchSales()).catch(e => alert(e.response?.data?.message || e.message));
+                      if (window.confirm(`Delete Invoice #${sale.invoiceNumber}?`)) {
+                         const promise = sale._id ? api.delete(`/sales/${sale._id}`) : Promise.resolve();
+                         promise.then(async () => {
+                           await db.sales.delete(sale.id);
+                           fetchSales();
+                           toast.success('Deleted');
+                         }).catch(e => toast.error('Failed to delete'));
                       }
                     }}><FaTrash size={14} /></IconButton>
                   </TableCell>

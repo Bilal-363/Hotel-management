@@ -1,7 +1,12 @@
-node_modules/
-Frontend/release/
-*.exe
-*.zip
+node_modules
+dist
+build
+release
+Frontend/release
 .env
-Frontend/release/
+.DS_Store
+.vscode
+coverage
+npm-debug.log
+*.exe
 HWH-POS-Portable/

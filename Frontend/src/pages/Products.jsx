@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import api from '../services/api';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db';
+import { db, resetDatabase } from '../db';
 
 const Products = () => {
   // const [products, setProducts] = useState([]); // Removed local state in favor of LiveQuery
@@ -33,6 +33,23 @@ const Products = () => {
 
   useEffect(() => {
     fetchData();
+  }, []);
+
+  // SESSION CHECK
+  useEffect(() => {
+    const checkSession = async () => {
+      const token = localStorage.getItem('token');
+      const lastToken = localStorage.getItem('db_token');
+      
+      if (token && lastToken && token !== lastToken) {
+        await resetDatabase();
+        localStorage.setItem('db_token', token);
+        window.location.reload();
+      } else if (token) {
+        localStorage.setItem('db_token', token);
+      }
+    };
+    checkSession();
   }, []);
 
   const fetchData = async () => {
