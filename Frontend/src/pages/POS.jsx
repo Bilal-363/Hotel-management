@@ -69,6 +69,7 @@ const POS = () => {
   }, [paymentMethod]);
 
   const loadKhatas = async () => {
+    if (!navigator.onLine) return;
     try {
       const res = await getKhatas();
       
@@ -146,7 +147,11 @@ const POS = () => {
   useEffect(() => {
     const handleStatus = () => {
       setIsOnline(navigator.onLine);
-      if (navigator.onLine) syncSales();
+      if (navigator.onLine) {
+        syncSales();
+        fetchProducts();
+        loadKhatas();
+      }
     };
     window.addEventListener('online', handleStatus);
     window.addEventListener('offline', handleStatus);
@@ -238,6 +243,11 @@ const POS = () => {
 
 
   const fetchProducts = async () => {
+    if (!navigator.onLine) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const [res, catRes] = await Promise.all([
         api.get('/products'),

@@ -33,6 +33,9 @@ const Products = () => {
 
   useEffect(() => {
     fetchData();
+    const handleOnline = () => fetchData();
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
   }, []);
 
   // SESSION CHECK
@@ -53,6 +56,11 @@ const Products = () => {
   }, []);
 
   const fetchData = async () => {
+    if (!navigator.onLine) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const [productsRes, categoriesRes] = await Promise.all([
         api.get('/products'),

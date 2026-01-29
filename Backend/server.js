@@ -1,4 +1,4 @@
-const path = require('path'); // Server Restart Triggered v2
+const path = require('path'); // Server Restart Triggered v3
 const isPkg = typeof process.pkg !== 'undefined';
 const basePath = isPkg ? path.dirname(process.execPath) : __dirname;
 
@@ -22,6 +22,7 @@ const app = express();
 
 // Database Connect
 connectDB();
+console.log('✅ Attempting to connect to MongoDB...');
 
 // ✅ STANDARD CORS CONFIGURATION
 const allowedOrigins = [
@@ -67,18 +68,44 @@ app.get('/', (req, res) => {
   });
 });
 
+// Health Check Route (To verify API is reachable)
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', message: 'Backend is healthy', timestamp: new Date() });
+});
+
 // API Routes
-app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/sales', require('./routes/saleRoutes'));
-app.use('/api/categories', require('./routes/categoryRoutes'));
-app.use('/api/products', require('./routes/productRoutes'));
-app.use('/api/expenses', require('./routes/expenseRoutes'));
-app.use('/api/dashboard', require('./routes/dashboardRoutes'));
-app.use('/api/khata', require('./routes/khataRoutes'));
-app.use('/api/dailylogs', require('./routes/dailyLogRoutes'));
+const authRoutes = require('./routes/authRoutes');
+const saleRoutes = require('./routes/saleRoutes');
+const categoryRoutes = require('./routes/categoryRoutes');
+const productRoutes = require('./routes/productRoutes');
+const expenseRoutes = require('./routes/expenseRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
+const khataRoutes = require('./routes/khataRoutes');
+const dailyLogRoutes = require('./routes/dailyLogRoutes');
+
+// Mount routes with /api prefix (Standard)
+app.use('/api/auth', authRoutes);
+app.use('/api/sales', saleRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/expenses', expenseRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/khata', khataRoutes);
+app.use('/api/dailylogs', dailyLogRoutes);
+
+// Mount routes WITHOUT /api prefix (Fallback for frontend config mismatch)
+app.use('/auth', authRoutes);
+app.use('/sales', saleRoutes);
+app.use('/categories', categoryRoutes);
+app.use('/products', productRoutes);
+app.use('/expenses', expenseRoutes);
+app.use('/dashboard', dashboardRoutes);
+app.use('/khata', khataRoutes);
+app.use('/dailylogs', dailyLogRoutes);
 
 // 404 Handler for unmatched routes
 app.use((req, res) => {
+  console.log(`⚠️ [404] Route not found: ${req.method} ${req.url}`);
   res.status(404).json({
     success: false,
     message: 'API Route not found'
