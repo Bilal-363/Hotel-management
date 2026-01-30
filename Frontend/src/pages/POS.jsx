@@ -119,7 +119,8 @@ const POS = () => {
         // Map items to API format (clean up extra offline fields)
         const apiItems = items.map(i => ({
           productId: i.productId || i._id,
-          quantity: i.quantity
+          quantity: i.quantity,
+          price: i.price // Send custom price if edited
         }));
 
         const res = await api.post('/sales', { ...rest, items: apiItems });
@@ -273,7 +274,7 @@ const POS = () => {
 
       fetchedProducts = fetchedProducts.map(p => ({
         ...p,
-        stock: p.stock - (pendingQtyMap[p._id] || 0)
+        stock: Math.round((p.stock - (pendingQtyMap[p._id] || 0)) * 1000000) / 1000000
       }));
 
       await db.products.clear();
@@ -305,12 +306,31 @@ const POS = () => {
     }
   };
 
+  const evaluateQuantity = (qty) => {
+    if (typeof qty === 'string' && qty.includes('/')) {
+      const [n, d] = qty.split('/');
+      if (!d || Number(d) === 0) return 0;
+      return Number(n) / Number(d);
+    }
+    return parseFloat(qty) || 0;
+  };
+
+  const updatePrice = (id, val) => {
+    setCart(cart.map(item => {
+      if (item._id === id) {
+        return { ...item, sellPrice: val };
+      }
+      return item;
+    }));
+  };
+
   const updateQuantity = (id, delta) => {
     setCart(cart.map(item => {
       if (item._id === id) {
-        const newQty = item.quantity + delta;
+        const current = evaluateQuantity(item.quantity);
+        const newQty = current + delta;
         if (newQty > 0 && newQty <= item.stock) {
-          return { ...item, quantity: newQty };
+          return { ...item, quantity: Math.round(newQty * 1000000) / 1000000 };
         }
       }
       return item;
@@ -318,14 +338,20 @@ const POS = () => {
   };
 
   const setCartQuantity = (id, val) => {
-    const newQty = parseInt(val) || 1; // Default to 1 if empty/invalid
     setCart(cart.map(item => {
       if (item._id === id) {
-        if (newQty >= 1 && newQty <= item.stock) {
-          return { ...item, quantity: newQty };
+        if (val === '') return { ...item, quantity: '' };
+        
+        // Allow fractions (e.g. 1/6)
+        if (val.includes('/')) {
+           return { ...item, quantity: val };
+        }
+
+        const newQty = parseFloat(val);
+        if (!isNaN(newQty) && newQty >= 0 && newQty <= item.stock) {
+          return { ...item, quantity: val };
         }
         if (newQty > item.stock) return { ...item, quantity: item.stock };
-        if (newQty < 1) return { ...item, quantity: 1 };
       }
       return item;
     }));
@@ -341,7 +367,7 @@ const POS = () => {
     setCustomerName('');
   };
 
-  const subtotal = cart.reduce((sum, item) => sum + (item.sellPrice * item.quantity), 0);
+  const subtotal = cart.reduce((sum, item) => sum + ((Number(item.sellPrice) || 0) * evaluateQuantity(item.quantity)), 0);
   const total = subtotal - discount;
 
   const handleCheckout = async () => {
@@ -355,10 +381,12 @@ const POS = () => {
     }
     try {
       const saleData = {
-        items: cart.map(item => ({ productId: item._id, quantity: item.quantity })),
+        items: cart.map(item => ({ productId: item._id, quantity: evaluateQuantity(item.quantity), price: Number(item.sellPrice) })),
+        total,
+        subtotal,
         discount,
         paymentMethod,
-        customerName: paymentMethod === 'Khata' ? (selectedKhata?.customer?.name || selectedKhata?.title) : (customerName || 'Walk-in Customer'),
+        customerName: paymentMethod === 'Khata' ? (selectedKhata?.customer?.name || selectedKhata?.title) : (customerName || 'Customer'),
         khataId: paymentMethod === 'Khata' ? selectedKhata?._id : undefined,
         paidAmount: paymentMethod === 'Khata' ? Number(paidAmount) : 0
       };
@@ -369,12 +397,24 @@ const POS = () => {
         const res = await api.post('/sales', saleData);
         saleResult = res.data.sale;
         
-        // Ensure items have names for receipt/local DB (in case backend doesn't populate immediately)
-        if (saleResult.items && saleResult.items.length > 0 && !saleResult.items[0].productName) {
-           saleResult.items = saleResult.items.map((item, idx) => ({
-             ...item,
-             productName: cart[idx]?.name || 'Item'
-           }));
+        // FORCE LOCAL CALCULATIONS FOR RECEIPT
+        // This fixes the issue where server might return full price for fractional qty
+        saleResult.total = total;
+        saleResult.subtotal = subtotal;
+        if (saleResult.items) {
+          saleResult.items = saleResult.items.map((item, idx) => {
+             const cartItem = cart[idx];
+             if (!cartItem) return item;
+             const qty = evaluateQuantity(cartItem.quantity);
+             const price = Number(cartItem.sellPrice);
+             return {
+                 ...item,
+                 productName: item.productName || cartItem.name,
+                 quantity: qty,
+                 sellPrice: price,
+                 itemTotal: price * qty
+             };
+          });
         }
 
         // Save to DB as synced for history
@@ -390,8 +430,10 @@ const POS = () => {
           items: cart.map(item => ({ 
             ...item, 
             productId: item._id, // Critical for stock calculation
+            quantity: evaluateQuantity(item.quantity),
             productName: item.name, 
-            itemTotal: item.sellPrice * item.quantity 
+            itemTotal: (Number(item.sellPrice) || 0) * evaluateQuantity(item.quantity),
+            price: Number(item.sellPrice)
           })),
           syncStatus: 'pending'
         };
@@ -402,7 +444,7 @@ const POS = () => {
           for (const item of cart) {
             const product = await db.products.get({ _id: item._id });
             if (product) {
-              await db.products.update(product.id, { stock: product.stock - item.quantity });
+              await db.products.update(product.id, { stock: Math.round((product.stock - evaluateQuantity(item.quantity)) * 1000000) / 1000000 });
             }
           }
 
@@ -508,6 +550,7 @@ const POS = () => {
             <Typography fontWeight={900} fontSize={32} sx={{ textTransform: 'uppercase', letterSpacing: '-1px', whiteSpace: 'nowrap', textAlign: 'center' }}>HAJI WARIS ALI</Typography>
             <Typography fontWeight={900} fontSize={18} sx={{ mt: 0.5, textTransform: 'uppercase', whiteSpace: 'nowrap', textAlign: 'center' }}>Haji waris hotel & traders</Typography>
             <Typography fontWeight={900} fontSize={18} sx={{ mt: 0.5, whiteSpace: 'nowrap', textAlign: 'center' }}>Haji waris hotel Renala Khurd</Typography>
+            <Typography fontWeight={900} fontSize={18} sx={{ mt: 0.5, whiteSpace: 'nowrap', textAlign: 'center' }}>Ph: 0315-3892032</Typography>
           </Box>
 
           <div className="dashed-line"></div>
@@ -522,7 +565,7 @@ const POS = () => {
               <span>Date: {new Date().toLocaleDateString('en-PK')}</span>
             </div>
             <div className="row">
-              <span>Cust: {lastSale?.customerName || 'Walk-in'}</span>
+              <span>Cust: {lastSale?.customerName || 'Customer'}</span>
             </div>
           </Box>
 
@@ -542,9 +585,9 @@ const POS = () => {
               {lastSale?.items?.map((item, i) => (
                 <tr key={i}>
                   <td className="text-left" style={{ padding: '4px 0', wordBreak: 'break-word' }}>{item.productName}</td>
-                  <td className="text-center">{item.quantity}</td>
-                  <td className="text-right">{item.sellPrice}</td>
-                  <td className="text-right">{item.itemTotal}</td>
+                  <td className="text-center">{Number(item.quantity).toFixed(3).replace(/\.?0+$/, '')}</td>
+                  <td className="text-right">{formatPKR(item.sellPrice)}</td>
+                  <td className="text-right">{formatPKR(item.itemTotal)}</td>
                 </tr>
               ))}
             </tbody>
@@ -556,29 +599,29 @@ const POS = () => {
           <Box sx={{ fontSize: '18px', mb: 1, fontWeight: '900' }}>
             <div className="row" style={{ fontSize: '18px' }}>
               <span>Subtotal:</span>
-              <span>{lastSale?.subtotal}</span>
+              <span>{formatPKR(lastSale?.subtotal)}</span>
             </div>
             {lastSale?.discount > 0 && (
               <div className="row" style={{ fontSize: '18px' }}>
                 <span>Discount:</span>
-                <span>-{lastSale?.discount}</span>
+                <span>-{formatPKR(lastSale?.discount)}</span>
               </div>
             )}
             <div className="dashed-line"></div>
             <div className="row" style={{ fontSize: '24px', fontWeight: '900', marginTop: '5px' }}>
               <span>Total:</span>
-              <span>{lastSale?.total}</span>
+              <span>{formatPKR(lastSale?.total)}</span>
             </div>
             {lastSale?.paymentMethod === 'Khata' && (
               <>
                 <div className="dashed-line"></div>
                 <div className="row" style={{ fontSize: '18px' }}>
                   <span>Paid:</span>
-                  <span>{lastSale?.paidAmount || 0}</span>
+                  <span>{formatPKR(lastSale?.paidAmount || 0)}</span>
                 </div>
                 <div className="row" style={{ fontSize: '18px' }}>
                   <span>Remaining (Udhaar):</span>
-                  <span>{lastSale?.khataRemainingAfterSale || 0}</span>
+                  <span>{formatPKR(lastSale?.khataRemainingAfterSale || 0)}</span>
                 </div>
 
                 <div className="dashed-line"></div>
@@ -706,13 +749,26 @@ const POS = () => {
                   <Box key={item._id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 1.5, mb: 1, bgcolor: '#f8fafc', borderRadius: 2 }}>
                     <Box>
                       <Typography fontSize={14} fontWeight={500}>{item.name}</Typography>
-                      <Typography fontSize={12} color="text.secondary">{formatPKR(item.sellPrice)}</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                        <Typography fontSize={12} color="text.secondary">Rate:</Typography>
+                        <input
+                          type="number"
+                          value={item.sellPrice}
+                          onChange={(e) => updatePrice(item._id, e.target.value)}
+                          className="no-spin"
+                          style={{ width: '70px', padding: '2px', fontSize: '12px', border: '1px solid #ddd', borderRadius: '4px' }}
+                        />
+                      </Box>
+                      {item.quantity != 1 && (
+                        <Typography fontSize={12} color="text.secondary" mt={0.5}>
+                          Total: <b>{formatPKR((Number(item.sellPrice) || 0) * evaluateQuantity(item.quantity))}</b>
+                        </Typography>
+                      )}
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <IconButton size="small" onClick={() => updateQuantity(item._id, -1)}><FaMinus size={12} /></IconButton>
                       <input
-                        type="number"
-                        min="1"
+                        type="text"
                         max={item.stock}
                         value={item.quantity}
                         onChange={(e) => setCartQuantity(item._id, e.target.value)}
@@ -727,6 +783,18 @@ const POS = () => {
               </Box>
 
               <Box sx={{ p: 2, borderTop: '1px solid #e2e8f0' }}>
+                {paymentMethod !== 'Khata' && (
+                  <Box sx={{ mb: 2 }}>
+                    <TextField
+                      label="Customer Name"
+                      size="small"
+                      fullWidth
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="Walk-in Customer"
+                    />
+                  </Box>
+                )}
                 {paymentMethod === 'Khata' && (
                   <Box>
                     <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
@@ -855,12 +923,6 @@ const POS = () => {
           <DialogContent>
             {lastSale && (
               <Box sx={{ fontFamily: 'monospace', p: 2, bgcolor: '#f8fafc', borderRadius: 2 }}>
-                {console.log('RECEIPT DEBUG:', {
-                  method: lastSale.paymentMethod,
-                  isKhata: lastSale.paymentMethod === 'Khata',
-                  historyLen: khataHistory.length,
-                  historyLoading
-                })}
                 <Typography textAlign="center" fontWeight={700} mb={2}>Invoice #{lastSale.invoiceNumber}</Typography>
                 <Typography textAlign="center" mb={1}>Haji Waris Ali Hotel & General Store</Typography>
                 {lastSale.items?.map((item, i) => (

@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
 import { FaChartBar, FaRupeeSign, FaChartLine, FaWallet, FaCalculator } from 'react-icons/fa';
 import api from '../services/api';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../db';
 
 const StatCard = ({ icon, label, value, color }) => (
   <Paper sx={{ p: 3, borderLeft: `4px solid ${color}` }}>
@@ -34,6 +36,41 @@ const Reports = () => {
       </Box>
     );
   }
+
+  // Live Query: Fetch all sales from local DB for accurate reporting
+  const allSales = useLiveQuery(() => db.sales.toArray()) || [];
+
+  // Calculate Product Performance Locally (Fixes "Sold" counts issue)
+  const productPerformance = useMemo(() => {
+    const stats = {};
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(todayStart);
+    weekStart.setDate(todayStart.getDate() - todayStart.getDay()); // Start of week (Sunday)
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+
+    allSales.forEach(sale => {
+      const saleDate = new Date(sale.createdAt);
+      
+      sale.items.forEach(item => {
+        // Handle different ID fields (server vs local)
+        const pId = item.product || item.productId || item._id;
+        if (!pId) return;
+
+        if (!stats[pId]) stats[pId] = { day: 0, week: 0, month: 0, year: 0 };
+        
+        // Ensure quantity is treated as a number (handles fractions)
+        const qty = Number(item.quantity) || 0;
+
+        if (saleDate >= todayStart) stats[pId].day += qty;
+        if (saleDate >= weekStart) stats[pId].week += qty;
+        if (saleDate >= monthStart) stats[pId].month += qty;
+        if (saleDate >= yearStart) stats[pId].year += qty;
+      });
+    });
+    return stats;
+  }, [allSales]);
 
   const fetchReport = async () => {
     setLoading(true);
@@ -192,7 +229,8 @@ const Reports = () => {
             </TableHead>
             <TableBody>
               {products.map((product) => {
-                const performance = report.productPerformance?.find(p => String(p._id) === String(product._id)) || { day: 0, week: 0, month: 0, year: 0 };
+                // Use local calculation instead of backend report
+                const performance = productPerformance[product._id] || { day: 0, week: 0, month: 0, year: 0 };
                 return (
                   <TableRow key={product._id} hover>
                     <TableCell>{product.name}</TableCell>
@@ -201,10 +239,10 @@ const Reports = () => {
                         {product.stock}
                       </span>
                     </TableCell>
-                    <TableCell sx={{ fontWeight: 600, color: 'success.main' }}>{performance.day || 0}</TableCell>
-                    <TableCell sx={{ fontWeight: 600, color: 'warning.main' }}>{performance.week || 0}</TableCell>
-                    <TableCell sx={{ fontWeight: 600, color: 'primary.main' }}>{performance.month}</TableCell>
-                    <TableCell sx={{ fontWeight: 600, color: 'secondary.main' }}>{performance.year}</TableCell>
+                    <TableCell sx={{ fontWeight: 600, color: 'success.main' }}>{Number(performance.day || 0).toFixed(3).replace(/\.?0+$/, '')}</TableCell>
+                    <TableCell sx={{ fontWeight: 600, color: 'warning.main' }}>{Number(performance.week || 0).toFixed(3).replace(/\.?0+$/, '')}</TableCell>
+                    <TableCell sx={{ fontWeight: 600, color: 'primary.main' }}>{Number(performance.month || 0).toFixed(3).replace(/\.?0+$/, '')}</TableCell>
+                    <TableCell sx={{ fontWeight: 600, color: 'secondary.main' }}>{Number(performance.year || 0).toFixed(3).replace(/\.?0+$/, '')}</TableCell>
                     <TableCell sx={{ color: 'warning.dark', fontWeight: 500 }}>{formatPKR(product.stock * product.buyPrice)}</TableCell>
                     <TableCell sx={{ color: 'success.dark', fontWeight: 600 }}>{formatPKR(product.stock * product.sellPrice)}</TableCell>
                   </TableRow>

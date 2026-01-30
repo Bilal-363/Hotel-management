@@ -83,7 +83,7 @@ const Products = () => {
 
       fetchedProducts = fetchedProducts.map(p => ({
         ...p,
-        stock: p.stock - (pendingQtyMap[p._id] || 0)
+        stock: Math.round((p.stock - (pendingQtyMap[p._id] || 0)) * 1000000) / 1000000
       }));
 
       // Cache Products
@@ -404,7 +404,7 @@ const Products = () => {
                     <TableCell>{formatPKR(product.sellPrice)}</TableCell>
                     {isAdmin && <TableCell sx={{ color: '#10b981', fontWeight: 600 }}>{formatPKR(product.profit)}</TableCell>}
                     <TableCell>
-                      <Chip label={product.stock} size="small" color={product.stock <= product.minStock ? 'error' : 'success'} />
+                      <Chip label={Number(product.stock).toFixed(3).replace(/\.?0+$/, '')} size="small" color={product.stock <= product.minStock ? 'error' : 'success'} />
                     </TableCell>
                     {isAdmin && <TableCell sx={{ fontWeight: 700 }}>{formatPKR(product.stock * product.sellPrice)}</TableCell>}
                     {isAdmin && <TableCell>
