@@ -30,7 +30,11 @@ const Login = () => {
       localStorage.setItem('tokenExpiry', expiryTime.toString());
 
       toast.success(`Welcome back, ${res.data.user.name}!`);
-      navigate('/');
+      if (res.data.user.role === 'admin') {
+        navigate('/');
+      } else {
+        navigate('/pos');
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed');
       toast.error('Login failed!');

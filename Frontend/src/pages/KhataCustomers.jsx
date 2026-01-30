@@ -71,13 +71,14 @@ const KhataCustomers = () => {
       const newCustomer = res.customer;
 
       // 2. Create Khata (if details provided)
-      if (form.itemName && form.totalAmount) {
+      if (form.totalAmount) {
+        const title = form.itemName || `${newCustomer.name}'s Khata`;
         const total = Number(form.totalAmount);
         const paid = Number(form.paidAmount || 0);
 
         const khataRes = await createKhata({
           customerId: newCustomer._id,
-          title: form.itemName,
+          title: title,
           totalAmount: total
         });
 

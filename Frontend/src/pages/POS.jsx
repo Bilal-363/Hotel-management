@@ -48,6 +48,10 @@ const POS = () => {
   ];
 
   const fetchKhataHistory = async (id) => {
+    if (!navigator.onLine) {
+      setKhataHistory([]);
+      return;
+    }
     try {
       if (!id) return;
       setHistoryLoading(true); // START LOADING
@@ -60,13 +64,6 @@ const POS = () => {
       setHistoryLoading(false); // STOP LOADING
     }
   };
-
-  useEffect(() => {
-    if (paymentMethod === 'Khata') {
-      loadKhatas();
-      setDiscount(0);
-    }
-  }, [paymentMethod]);
 
   const loadKhatas = async () => {
     if (!navigator.onLine) return;
@@ -145,10 +142,10 @@ const POS = () => {
   };
 
   useEffect(() => {
-    const handleStatus = () => {
+    const handleStatus = async () => {
       setIsOnline(navigator.onLine);
       if (navigator.onLine) {
-        syncSales();
+        await syncSales();
         fetchProducts();
         loadKhatas();
       }
@@ -184,6 +181,10 @@ const POS = () => {
   };
 
   const handleCreateKhata = async () => {
+    if (!navigator.onLine) {
+      toast.error('Cannot create Khata while offline');
+      return;
+    }
     try {
       if (!newKhataData.name) return alert('Name is required');
 
@@ -228,6 +229,10 @@ const POS = () => {
   };
 
   const handleViewHistory = async () => {
+    if (!navigator.onLine) {
+      toast.error('History not available offline');
+      return;
+    }
     if (!selectedKhata) return;
     try {
       // Fetch sales linked to this khata
@@ -425,8 +430,8 @@ const POS = () => {
       setReceiptModal(true); // SHOW RECEIPT IMMEDIATELY
 
       // Fetch history in background (don't await fully to block UI)
-      if (paymentMethod === 'Khata' && (selectedKhata?._id || res.data.sale.khataId)) {
-        fetchKhataHistory(res.data.sale.khataId || selectedKhata._id);
+      if (paymentMethod === 'Khata' && (selectedKhata?._id || saleResult.khataId)) {
+        fetchKhataHistory(saleResult.khataId || selectedKhata._id);
       } else {
         setKhataHistory([]);
       }

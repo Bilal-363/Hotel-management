@@ -18,6 +18,9 @@ const Sales = () => {
   const [selectedSales, setSelectedSales] = useState([]);
   const [selectAll, setSelectAll] = useState(false);
 
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const isAdmin = user.role === 'admin';
+
   // Live Query: Reads from local DB (includes offline sales)
   const allSales = useLiveQuery(() => db.sales.orderBy('createdAt').reverse().toArray()) || [];
 
@@ -195,7 +198,7 @@ const Sales = () => {
           <Button variant="contained" onClick={fetchSales}>Filter</Button>
           <Box sx={{ ml: 'auto', display: 'flex', gap: 3 }}>
             <Box><Typography variant="body2" color="text.secondary">Total Sales</Typography><Typography fontWeight={700} color="primary">{formatPKR(totalSales)}</Typography></Box>
-            <Box><Typography variant="body2" color="text.secondary">Total Profit</Typography><Typography fontWeight={700} color="success.main">{formatPKR(totalProfit)}</Typography></Box>
+            {isAdmin && <Box><Typography variant="body2" color="text.secondary">Total Profit</Typography><Typography fontWeight={700} color="success.main">{formatPKR(totalProfit)}</Typography></Box>}
           </Box>
         </Box>
       </Paper>
@@ -204,7 +207,7 @@ const Sales = () => {
 
       {/* Bulk Actions Toolbar */}
       {
-        selectedSales.length > 0 && (
+        isAdmin && selectedSales.length > 0 && (
           <Paper sx={{ mb: 2, p: 2, bgcolor: '#eff6ff', border: '1px solid #3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Typography color="primary" fontWeight={600}>{selectedSales.length} invoices selected</Typography>
             <Button
@@ -236,7 +239,7 @@ const Sales = () => {
                 <TableCell>Customer</TableCell>
                 <TableCell>Items</TableCell>
                 <TableCell>Total</TableCell>
-                <TableCell>Profit</TableCell>
+                {isAdmin && <TableCell>Profit</TableCell>}
                 <TableCell>Payment</TableCell>
                 <TableCell>Actions</TableCell>
               </TableRow>
@@ -260,11 +263,11 @@ const Sales = () => {
                   <TableCell>{sale.customerName}</TableCell>
                   <TableCell>{sale.items?.length} items</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>{formatPKR(sale.total)}</TableCell>
-                  <TableCell sx={{ color: '#10b981', fontWeight: 600 }}>{formatPKR(sale.totalProfit)}</TableCell>
+                  {isAdmin && <TableCell sx={{ color: '#10b981', fontWeight: 600 }}>{formatPKR(sale.totalProfit)}</TableCell>}
                   <TableCell><Chip label={sale.paymentMethod} size="small" color="primary" /></TableCell>
                   <TableCell>
                     <IconButton size="small" onClick={() => viewSale(sale)}><FaEye /></IconButton>
-                    <IconButton size="small" color="error" onClick={() => {
+                    {isAdmin && <IconButton size="small" color="error" onClick={() => {
                       setSelectedSale(sale);
                       // We use a timeout to let state update or just open a separate confirm
                       // But since we use the modal for details, we can also put a delete button INSIDE the modal
@@ -277,7 +280,7 @@ const Sales = () => {
                            toast.success('Deleted');
                          }).catch(e => toast.error('Failed to delete'));
                       }
-                    }}><FaTrash size={14} /></IconButton>
+                    }}><FaTrash size={14} /></IconButton>}
                   </TableCell>
                 </TableRow>
               ))}
@@ -326,7 +329,7 @@ const Sales = () => {
           )}
         </DialogContent>
         <DialogActions>
-          <Button color="error" onClick={handleDelete} startIcon={<FaTrash />}>Delete Invoice</Button>
+          {isAdmin && <Button color="error" onClick={handleDelete} startIcon={<FaTrash />}>Delete Invoice</Button>}
           <Button onClick={() => setDetailModal(false)}>Close</Button>
         </DialogActions>
       </Dialog>

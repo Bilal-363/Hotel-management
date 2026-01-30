@@ -24,6 +24,16 @@ const Reports = () => {
   const [loading, setLoading] = useState(false);
 
   const [products, setProducts] = useState([]);
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+  if (user.role !== 'admin') {
+    return (
+      <Box sx={{ p: 4, textAlign: 'center' }}>
+        <Typography variant="h5" color="error" fontWeight={700}>Access Denied</Typography>
+        <Typography color="text.secondary">Only Admins can view Reports.</Typography>
+      </Box>
+    );
+  }
 
   const fetchReport = async () => {
     setLoading(true);

@@ -31,6 +31,9 @@ const Products = () => {
   const products = useLiveQuery(() => db.products.toArray()) || [];
   const categories = useLiveQuery(() => db.categories.where('type').equals('product').toArray()) || [];
 
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const isAdmin = user.role === 'admin';
+
   useEffect(() => {
     fetchData();
     const handleOnline = () => fetchData();
@@ -316,15 +319,17 @@ const Products = () => {
             onChange={(e) => setSearch(e.target.value)}
             sx={{ bgcolor: 'white', backgroundColor: 'white' }}
           />
-          <Button variant="outlined" startIcon={<FaFileImport />} onClick={handleImportClick} color="success">Import Excel</Button>
-          <Button variant="outlined" startIcon={<FaFileExcel />} onClick={handleExport} color="success">Export Excel</Button>
-          <Button variant="outlined" startIcon={<FaTags />} onClick={openCategoryModal}>Add Category</Button>
-          <Button variant="contained" startIcon={<FaPlus />} onClick={() => openModal()}>Add Product</Button>
+          {isAdmin && <>
+            <Button variant="outlined" startIcon={<FaFileImport />} onClick={handleImportClick} color="success">Import Excel</Button>
+            <Button variant="outlined" startIcon={<FaFileExcel />} onClick={handleExport} color="success">Export Excel</Button>
+            <Button variant="outlined" startIcon={<FaTags />} onClick={openCategoryModal}>Add Category</Button>
+            <Button variant="contained" startIcon={<FaPlus />} onClick={() => openModal()}>Add Product</Button>
+          </>}
         </Box>
       </Box>
 
       {/* Bulk Actions Toolbar */}
-      {selectedProducts.length > 0 && (
+      {isAdmin && selectedProducts.length > 0 && (
         <Paper sx={{ mb: 2, p: 2.5, bgcolor: '#eff6ff', border: '2px solid #3b82f6', borderRadius: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Typography sx={{ color: '#1e40af', fontWeight: 600, fontSize: 16 }}>
@@ -366,12 +371,12 @@ const Products = () => {
                 </TableCell>
                 <TableCell>Name</TableCell>
                 <TableCell>Category</TableCell>
-                <TableCell>Buy Price</TableCell>
+                {isAdmin && <TableCell>Buy Price</TableCell>}
                 <TableCell>Sell Price</TableCell>
-                <TableCell>Profit</TableCell>
+                {isAdmin && <TableCell>Profit</TableCell>}
                 <TableCell>Stock</TableCell>
-                <TableCell>Total Value</TableCell>
-                <TableCell>Actions</TableCell>
+                {isAdmin && <TableCell>Total Value</TableCell>}
+                {isAdmin && <TableCell>Actions</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -395,17 +400,17 @@ const Products = () => {
                     </TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>{product.name}</TableCell>
                     <TableCell><Chip label={product.category} size="small" /></TableCell>
-                    <TableCell>{formatPKR(product.buyPrice)}</TableCell>
+                    {isAdmin && <TableCell>{formatPKR(product.buyPrice)}</TableCell>}
                     <TableCell>{formatPKR(product.sellPrice)}</TableCell>
-                    <TableCell sx={{ color: '#10b981', fontWeight: 600 }}>{formatPKR(product.profit)}</TableCell>
+                    {isAdmin && <TableCell sx={{ color: '#10b981', fontWeight: 600 }}>{formatPKR(product.profit)}</TableCell>}
                     <TableCell>
                       <Chip label={product.stock} size="small" color={product.stock <= product.minStock ? 'error' : 'success'} />
                     </TableCell>
-                    <TableCell sx={{ fontWeight: 700 }}>{formatPKR(product.stock * product.sellPrice)}</TableCell>
-                    <TableCell>
+                    {isAdmin && <TableCell sx={{ fontWeight: 700 }}>{formatPKR(product.stock * product.sellPrice)}</TableCell>}
+                    {isAdmin && <TableCell>
                       <IconButton size="small" onClick={() => openModal(product)}><FaEdit /></IconButton>
                       <IconButton size="small" color="error" onClick={() => handleDelete(product._id)}><FaTrash /></IconButton>
-                    </TableCell>
+                    </TableCell>}
                   </TableRow>
                 ))}
             </TableBody>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Box, TextField, Button, Typography, Paper, Alert, MenuItem } from '@mui/material';
+import { Box, TextField, Button, Typography, Paper, Alert } from '@mui/material';
 import { FaStore, FaUser, FaEnvelope, FaLock, FaPhone } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import api from '../services/api';
@@ -13,7 +13,8 @@ const Signup = () => {
     password: '',
     confirmPassword: '',
     phone: '',
-    role: 'staff'
+    role: 'staff',
+    secretCode: ''
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -41,13 +42,15 @@ const Signup = () => {
       return;
     }
 
+    const finalRole = formData.secretCode === 'HWH-ADMIN-2025' ? 'admin' : 'staff';
+
     try {
       await api.post('/auth/register', {
         name: formData.name,
         email: formData.email,
         password: formData.password,
         phone: formData.phone,
-        role: formData.role
+        role: finalRole
       });
       
       toast.success('Account created successfully! Please login.');
@@ -77,10 +80,7 @@ const Signup = () => {
           <TextField fullWidth label="Full Name" name="name" value={formData.name} onChange={handleChange} required sx={{ mb: 2 }} InputProps={{ startAdornment: <FaUser style={{ marginRight: 10, color: '#64748b' }} /> }} />
           <TextField fullWidth label="Email" name="email" type="email" value={formData.email} onChange={handleChange} required sx={{ mb: 2 }} InputProps={{ startAdornment: <FaEnvelope style={{ marginRight: 10, color: '#64748b' }} /> }} />
           <TextField fullWidth label="Phone Number" name="phone" value={formData.phone} onChange={handleChange} sx={{ mb: 2 }} InputProps={{ startAdornment: <FaPhone style={{ marginRight: 10, color: '#64748b' }} /> }} />
-          <TextField fullWidth select label="Role" name="role" value={formData.role} onChange={handleChange} sx={{ mb: 2 }}>
-            <MenuItem value="staff">Staff</MenuItem>
-            <MenuItem value="admin">Admin</MenuItem>
-          </TextField>
+          <TextField fullWidth label="Secret Code (For Admin)" name="secretCode" type="password" value={formData.secretCode} onChange={handleChange} sx={{ mb: 2 }} InputProps={{ startAdornment: <FaLock style={{ marginRight: 10, color: '#64748b' }} /> }} />
           <TextField fullWidth label="Password" name="password" type="password" value={formData.password} onChange={handleChange} required sx={{ mb: 2 }} InputProps={{ startAdornment: <FaLock style={{ marginRight: 10, color: '#64748b' }} /> }} />
           <TextField fullWidth label="Confirm Password" name="confirmPassword" type="password" value={formData.confirmPassword} onChange={handleChange} required sx={{ mb: 3 }} InputProps={{ startAdornment: <FaLock style={{ marginRight: 10, color: '#64748b' }} /> }} />
 
