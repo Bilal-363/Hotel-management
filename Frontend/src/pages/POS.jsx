@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Box, Grid, Paper, Typography, TextField, Button, IconButton, Chip, Dialog, DialogTitle, DialogContent, DialogActions, Autocomplete } from '@mui/material';
-import { FaPlus, FaMinus, FaTrash, FaShoppingCart, FaMoneyBillWave, FaMobileAlt, FaCreditCard, FaPrint, FaBook, FaSync } from 'react-icons/fa';
+import { FaPlus, FaMinus, FaTrash, FaShoppingCart, FaMoneyBillWave, FaMobileAlt, FaCreditCard, FaPrint, FaBook, FaSync, FaWhatsapp } from 'react-icons/fa';
 import api from '../services/api';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, resetDatabase } from '../db';
@@ -499,7 +499,14 @@ const POS = () => {
     window.print();
   };
 
-
+  const handleWhatsApp = () => {
+    if (!lastSale) return;
+    const itemsList = lastSale.items.map(i => `${i.productName} x${Number(i.quantity).toFixed(3).replace(/\.?0+$/, '')} - ${formatPKR(i.itemTotal)}`).join('%0A');
+    const message = `*Haji Waris Ali Hotel*%0AInvoice: ${lastSale.invoiceNumber}%0ADate: ${new Date(lastSale.createdAt).toLocaleDateString()}%0A%0A*Items:*%0A${itemsList}%0A%0A*Total: ${formatPKR(lastSale.total)}*%0A%0AThank you for shopping!`;
+    
+    const url = `https://wa.me/?text=${message}`;
+    window.open(url, '_blank');
+  };
 
   return (
     <Box>
@@ -700,7 +707,11 @@ const POS = () => {
                 Reference image shows a simple barcode. I'll stick to text for now unless asked. 
             */}
             <Box sx={{ mt: 1, display: 'flex', justifyContent: 'center' }}>
-              {/* Simple visual mimic of barcode lines if we wanted, but better to leave clean for now */}
+              <img 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`Invoice: ${lastSale?.invoiceNumber} | Total: ${lastSale?.total}`)}`}
+                alt="QR"
+                style={{ width: '80px', height: '80px' }}
+              />
             </Box>
           </Box>
         </Box>
@@ -939,6 +950,7 @@ const POS = () => {
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setReceiptModal(false)}>Close</Button>
+            <Button variant="outlined" color="success" startIcon={<FaWhatsapp />} onClick={handleWhatsApp}>WhatsApp</Button>
             <Button variant="contained" startIcon={<FaPrint />} onClick={handlePrint}>Print Receipt</Button>
           </DialogActions>
         </Dialog>

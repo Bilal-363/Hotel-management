@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Box, Paper, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Checkbox } from '@mui/material';
-import { FaReceipt, FaEye, FaCalendar, FaTrash } from 'react-icons/fa';
+import { FaReceipt, FaEye, FaCalendar, FaTrash, FaWhatsapp } from 'react-icons/fa';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -60,7 +60,7 @@ const Sales = () => {
         for (const sale of pendingSales) {
           try {
             const { id, syncStatus, invoiceNumber, items, ...rest } = sale;
-            const apiItems = items.map(i => ({ productId: i.productId || i._id, quantity: i.quantity }));
+            const apiItems = items.map(i => ({ productId: i.productId || i._id, quantity: i.quantity, price: i.price }));
             
             const res = await api.post('/sales', { ...rest, items: apiItems });
             
@@ -104,6 +104,14 @@ const Sales = () => {
 
   const formatPKR = (amount) => `Rs. ${(amount || 0).toLocaleString()}`;
   const formatDate = (date) => new Date(date).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' });
+
+  const handleWhatsApp = (sale) => {
+    const itemsList = sale.items.map(i => `${i.productName} x${Number(i.quantity).toFixed(3).replace(/\.?0+$/, '')} - ${formatPKR(i.itemTotal || (i.sellPrice * i.quantity))}`).join('%0A');
+    const message = `*Haji Waris Ali Hotel*%0AInvoice: ${sale.invoiceNumber}%0ADate: ${new Date(sale.createdAt).toLocaleDateString()}%0A%0A*Items:*%0A${itemsList}%0A%0A*Total: ${formatPKR(sale.total)}*%0A%0AThank you for shopping!`;
+    
+    const url = `https://wa.me/?text=${message}`;
+    window.open(url, '_blank');
+  };
 
   const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
   const totalProfit = sales.reduce((sum, sale) => sum + sale.totalProfit, 0);
@@ -267,6 +275,7 @@ const Sales = () => {
                   <TableCell><Chip label={sale.paymentMethod} size="small" color="primary" /></TableCell>
                   <TableCell>
                     <IconButton size="small" onClick={() => viewSale(sale)}><FaEye /></IconButton>
+                    <IconButton size="small" color="success" onClick={() => handleWhatsApp(sale)}><FaWhatsapp /></IconButton>
                     {isAdmin && <IconButton size="small" color="error" onClick={() => {
                       setSelectedSale(sale);
                       // We use a timeout to let state update or just open a separate confirm
@@ -330,6 +339,7 @@ const Sales = () => {
         </DialogContent>
         <DialogActions>
           {isAdmin && <Button color="error" onClick={handleDelete} startIcon={<FaTrash />}>Delete Invoice</Button>}
+          <Button variant="outlined" color="success" startIcon={<FaWhatsapp />} onClick={() => handleWhatsApp(selectedSale)}>WhatsApp</Button>
           <Button onClick={() => setDetailModal(false)}>Close</Button>
         </DialogActions>
       </Dialog>

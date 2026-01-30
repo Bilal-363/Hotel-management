@@ -16,6 +16,8 @@ import KhataList from '@/pages/KhataList';
 import KhataDetail from '@/pages/KhataDetail';
 import DailyLog from '@/pages/DailyLog';
 import Settings from '@/pages/Settings';
+import Suppliers from '@/pages/Suppliers';
+import Purchases from '@/pages/Purchases';
 import Profile from '@/pages/Profile';
 import Login from '@/pages/Login';
 import Signup from '@/pages/Signup';
@@ -71,6 +73,8 @@ const PageTitleUpdater = () => {
       '/khata': 'Khata Customers',
       '/khatas': 'Khata Management',
       '/daily-log': 'Daily Log',
+      '/suppliers': 'Suppliers',
+      '/purchases': 'Purchases',
       '/settings': 'Settings',
       '/profile': 'Profile',
       '/login': 'Login',
@@ -153,6 +157,18 @@ function App() {
         <Route path="/daily-log" element={
           <PrivateRoute>
             <Layout><DailyLog /></Layout>
+          </PrivateRoute>
+        } />
+
+        <Route path="/suppliers" element={
+          <PrivateRoute>
+            <Layout><Suppliers /></Layout>
+          </PrivateRoute>
+        } />
+
+        <Route path="/purchases" element={
+          <PrivateRoute>
+            <Layout><Purchases /></Layout>
           </PrivateRoute>
         } />
 

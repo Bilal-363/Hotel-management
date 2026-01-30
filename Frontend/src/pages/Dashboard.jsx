@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Box, Grid, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip } from '@mui/material';
-import { FaMoneyBillWave, FaShoppingCart, FaChartLine, FaExclamationTriangle, FaBoxes, FaReceipt } from 'react-icons/fa';
+import { useNavigate } from 'react-router-dom';
+import { Box, Grid, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Button } from '@mui/material';
+import { FaMoneyBillWave, FaShoppingCart, FaChartLine, FaExclamationTriangle, FaBoxes, FaReceipt, FaTruck } from 'react-icons/fa';
 import api from '../services/api';
 
 const StatCard = ({ icon, label, value, color }) => (
@@ -28,6 +29,7 @@ const StatCard = ({ icon, label, value, color }) => (
 );
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const [stats, setStats] = useState({});
   const [recentSales, setRecentSales] = useState([]);
   const [lowStock, setLowStock] = useState([]);
@@ -83,7 +85,17 @@ const Dashboard = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h4" fontWeight={700} mb={3}>Dashboard</Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" fontWeight={700}>Dashboard</Typography>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button variant="contained" startIcon={<FaTruck />} onClick={() => navigate('/suppliers')} sx={{ bgcolor: '#475569' }}>
+            Suppliers
+          </Button>
+          <Button variant="contained" startIcon={<FaShoppingCart />} onClick={() => navigate('/purchases')} sx={{ bgcolor: '#475569' }}>
+            Purchases
+          </Button>
+        </Box>
+      </Box>
 
       <Grid container spacing={3}>
         {/* Stats Cards */}
