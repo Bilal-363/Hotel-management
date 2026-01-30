@@ -1,4 +1,4 @@
-const path = require('path'); // Server Restart Triggered v3
+const path = require('path'); // Server Restart Triggered v5
 const isPkg = typeof process.pkg !== 'undefined';
 const basePath = isPkg ? path.dirname(process.execPath) : __dirname;
 
