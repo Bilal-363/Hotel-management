@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Box, Paper, Typography, Divider, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Dialog, DialogTitle, DialogContent, DialogActions, Chip, IconButton, Tooltip } from '@mui/material';
-import { FaBook, FaMoneyBill, FaPlus, FaFilePdf, FaArrowLeft, FaCheck, FaTimes, FaFileCsv, FaFileExcel, FaTrash } from 'react-icons/fa';
+import { FaBook, FaMoneyBill, FaPlus, FaFilePdf, FaArrowLeft, FaCheck, FaTimes, FaFileCsv, FaFileExcel, FaTrash, FaWhatsapp } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import { getKhata, addCharge, addInstallments, payInstallment, updateKhata, deleteTransaction } from '../services/khataService';
 import { useReactToPrint } from 'react-to-print';
@@ -85,6 +85,33 @@ const KhataDetail = () => {
     } catch (e) {
       toast.error(e.response?.data?.message || 'Failed to delete transaction');
     }
+  };
+
+  const handleShareTransaction = (tx) => {
+    const customer = k.customer;
+    if (!customer?.phone) return toast.error('No phone number');
+    
+    let cleanPhone = customer.phone.replace(/\D/g, '');
+    if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
+      cleanPhone = '92' + cleanPhone.substring(1);
+    }
+
+    const date = new Date(tx.createdAt).toLocaleDateString('en-PK');
+    const isPayment = tx.type === 'payment';
+    
+    let message = `*Haji Waris Ali Hotel*\n` +
+      `Date: ${date}\n\n` +
+      `*Transaction Receipt*\n` +
+      `Customer: ${customer.name}\n` +
+      `Type: ${isPayment ? 'Payment Received' : 'Charge/Bill'}\n` +
+      `Amount: ${formatPKR(tx.amount)}\n`;
+      
+    if (tx.note) message += `Note: ${tx.note}\n`;
+    
+    message += `\n*Current Balance:* ${formatPKR(k.remainingAmount)}\n\nThank you!`;
+
+    const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
   };
 
   useEffect(() => { 
@@ -396,6 +423,9 @@ const KhataDetail = () => {
                       <Typography variant="body2" color="#64748b">{new Date(tx.createdAt).toLocaleDateString('en-PK')}</Typography>
                       <Box sx={{ display: 'flex', gap: 1 }}>
                         <Chip label={tx.type} size="small" sx={{ height: 20, fontSize: '0.65rem', bgcolor: tx.type === 'payment' ? '#22c55e' : '#ef4444', color: 'white' }} />
+                        <IconButton size="small" onClick={() => handleShareTransaction(tx)} sx={{ p: 0.5, color: '#25D366', ml: 1, '&:hover': { bgcolor: '#f0fdf4' } }}>
+                          <FaWhatsapp size={14} />
+                        </IconButton>
                         <IconButton
                           size="small"
                           onClick={() => handleDeleteClick(tx)}

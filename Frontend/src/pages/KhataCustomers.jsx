@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { Box, Paper, Typography, Button, TextField, Chip, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Dialog, DialogTitle, DialogContent, DialogActions, Alert, IconButton, Tooltip, InputAdornment, Checkbox } from '@mui/material';
 import { FaUsers, FaPlus, FaBook, FaHistory, FaEdit, FaTrash, FaList, FaFilePdf, FaSearch, FaFileExcel, FaFileCsv, FaArrowLeft, FaEye, FaWhatsapp } from 'react-icons/fa';
 import toast from 'react-hot-toast';
-import { getCustomers, createCustomer, createKhata, getCustomerHistory, updateCustomer, deleteCustomer, addInstallments, payInstallment, getKhata } from '../services/khataService';
+import { getCustomers, createCustomer, createKhata, getCustomerHistory, updateCustomer, deleteCustomer, addInstallments, payInstallment, getKhata, addCharge } from '../services/khataService';
 import { useReactToPrint } from 'react-to-print';
 import { exportToCSV, exportToXLSX, pagePrintStyle } from '../utils/exportUtils';
 import { useNavigate } from 'react-router-dom';
@@ -104,26 +104,42 @@ const KhataCustomers = () => {
       // 2. Create Khata (if details provided)
       if (form.totalAmount) {
         const title = form.itemName || `${newCustomer.name}'s Khata`;
-        const total = Number(form.totalAmount);
-        const paid = Number(form.paidAmount || 0);
+        
+        // Parse expression to check for multiple values
+        const expression = form.totalAmount.toString();
+        const parts = expression.split('+').map(p => {
+           const val = calculateExpression(p);
+           return Number(val) || 0;
+        }).filter(v => v > 0);
 
-        const khataRes = await createKhata({
-          customerId: newCustomer._id,
-          title: title,
-          totalAmount: total
-        });
+        const totalCalculated = parts.reduce((a, b) => a + b, 0);
+        const paid = Number(calculateExpression(form.paidAmount) || 0);
+
+        let khataId;
+
+        // If multiple parts, create with 0 then add charges separately
+        if (parts.length > 1) {
+            const khataRes = await createKhata({ customerId: newCustomer._id, title, totalAmount: 0 });
+            khataId = khataRes.khata._id;
+            for (const amount of parts) {
+                await addCharge(khataId, { amount, note: title });
+            }
+        } else {
+            const khataRes = await createKhata({ customerId: newCustomer._id, title, totalAmount: totalCalculated });
+            khataId = khataRes.khata._id;
+        }
 
         // 3. Handle Advance Payment (if any)
         if (paid > 0) {
           // Add installment for the paid amount (due today)
-          await addInstallments(khataRes.khata._id, [{
+          await addInstallments(khataId, [{
             amount: paid,
             dueDate: new Date().toISOString().split('T')[0],
             note: 'Advance Payment'
           }]);
 
           // Fetch updated khata to get the installment ID
-          const updatedKhataRes = await getKhata(khataRes.khata._id);
+          const updatedKhataRes = await getKhata(khataId);
           const installment = updatedKhataRes.khata.installments.find(i => i.amount === paid && i.status !== 'paid');
 
           if (installment) {
@@ -152,12 +168,24 @@ const KhataCustomers = () => {
   const handleCreateKhata = async () => {
     if (!navigator.onLine) return toast.error('Cannot create while offline');
     try {
-      const totalAmount = Number(khataForm.totalAmount || '0');
-      if (!khataForm.title || !totalAmount || totalAmount <= 0) {
+      const expression = khataForm.totalAmount.toString();
+      const parts = expression.split('+').map(p => {
+          const val = calculateExpression(p);
+          return Number(val) || 0;
+      }).filter(v => v > 0);
+      
+      const totalCalculated = parts.reduce((a, b) => a + b, 0);
+
+      if (!khataForm.title || totalCalculated <= 0) {
         toast.error('Enter title and amount');
         return;
       }
-      await createKhata({ customerId: current._id, title: khataForm.title, totalAmount });
+
+      const khataRes = await createKhata({ customerId: current._id, title: khataForm.title, totalAmount: parts.length > 1 ? 0 : totalCalculated });
+      if (parts.length > 1) {
+          for (const amount of parts) await addCharge(khataRes.khata._id, { amount, note: khataForm.title });
+      }
+
       toast.success('Khata created');
       setCreateKhataOpen(false);
       setCurrent(null);
@@ -490,7 +518,6 @@ const KhataCustomers = () => {
                 size="small" 
                 value={form.totalAmount || ''} 
                 onChange={(e) => setForm({ ...form, totalAmount: e.target.value })} 
-                onBlur={() => setForm({ ...form, totalAmount: calculateExpression(form.totalAmount) })}
               />
               <TextField 
                 label="Paid (Advance)" 
@@ -499,14 +526,13 @@ const KhataCustomers = () => {
                 size="small" 
                 value={form.paidAmount || ''} 
                 onChange={(e) => setForm({ ...form, paidAmount: e.target.value })} 
-                onBlur={() => setForm({ ...form, paidAmount: calculateExpression(form.paidAmount) })}
               />
             </Box>
             {form.totalAmount && (
               <Box sx={{ mt: 2, p: 1.5, bgcolor: '#f1f5f9', borderRadius: 1, textAlign: 'right' }}>
                 <Typography variant="caption" color="#64748b">Remaining Balance</Typography>
                 <Typography variant="h6" fontWeight={600} color="#ef4444">
-                  {formatPKR((Number(form.totalAmount) || 0) - (Number(form.paidAmount) || 0))}
+                  {formatPKR((Number(calculateExpression(form.totalAmount)) || 0) - (Number(calculateExpression(form.paidAmount)) || 0))}
                 </Typography>
               </Box>
             )}
@@ -586,7 +612,6 @@ const KhataCustomers = () => {
               sx={{ mt: 2 }} 
               value={khataForm.totalAmount} 
               onChange={(e) => setKhataForm({ ...khataForm, totalAmount: e.target.value })} 
-              onBlur={() => setKhataForm({ ...khataForm, totalAmount: calculateExpression(khataForm.totalAmount) })}
             />
           </DialogContent>
           <DialogActions>
