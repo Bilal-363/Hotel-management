@@ -7,7 +7,7 @@ router.get('/', protect, getAllSales);
 router.get('/today', protect, getTodaySales);
 router.get('/invoice/:invoiceNumber', protect, getSaleByInvoice);
 router.get('/:id', protect, getSale);
-router.post('/', optionalAuth, createSale);
+router.post('/', protect, createSale);
 router.put('/:id/refund', protect, refundSale);
 
 router.delete('/:id', protect, deleteSale); // Add deleteSale

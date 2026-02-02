@@ -37,7 +37,7 @@ const POS = () => {
   const dbCategories = useLiveQuery(() => db.categories.where('type').equals('product').toArray()) || [];
   const khatas = useLiveQuery(() => db.khatas.toArray()) || [];
 
-  const categories = ['All', ...dbCategories.map(c => c.name)];
+  const categories = ['All', ...dbCategories.map(c => c?.name).filter(Boolean)];
 
   const paymentMethods = [
     { name: 'Khata', icon: <FaBook /> },
@@ -290,8 +290,9 @@ const POS = () => {
   };
 
   const filteredProducts = products.filter(p => {
+    if (!p || !p.name) return false;
     const matchCategory = category === 'All' || (p.category && p.category.toLowerCase() === category.toLowerCase());
-    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = p.name && p.name.toLowerCase().includes(search.toLowerCase());
     return matchCategory && matchSearch && p.stock > 0;
   });
 

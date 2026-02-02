@@ -1,4 +1,4 @@
-const path = require('path'); // Server Restart Triggered v8
+const path = require('path'); // Server Restart Triggered v29
 const isPkg = typeof process.pkg !== 'undefined';
 const basePath = isPkg ? path.dirname(process.execPath) : __dirname;
 
@@ -17,6 +17,10 @@ if (!process.env.JWT_EXPIRE) process.env.JWT_EXPIRE = '30d';
 const express = require('express');
 const cors = require('cors'); // ✅ Standard CORS package
 const connectDB = require('./config/db');
+const cron = require('node-cron');
+const { generateBackupData } = require('./utils/backupGenerator');
+const { uploadToDrive, isDriveConfigured } = require('./utils/driveService');
+const sendEmail = require('./utils/emailService');
 
 const app = express();
 
@@ -50,8 +54,8 @@ app.use(cors({
 }));
 
 // Body Parser
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // 🔍 DEBUG LOGGER (Must be before routes)
 app.use((req, res, next) => {
@@ -82,6 +86,10 @@ const expenseRoutes = require('./routes/expenseRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const khataRoutes = require('./routes/khataRoutes');
 const dailyLogRoutes = require('./routes/dailyLogRoutes');
+const supplierRoutes = require('./routes/supplierRoutes');
+const purchaseRoutes = require('./routes/purchaseRoutes');
+const trashRoutes = require('./routes/trashRoutes');
+const backupRoutes = require('./routes/backupRoutes');
 
 // Mount routes with /api prefix (Standard)
 app.use('/api/auth', authRoutes);
@@ -92,8 +100,13 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/khata', khataRoutes);
 app.use('/api/dailylogs', dailyLogRoutes);
+app.use('/api/suppliers', supplierRoutes);
+app.use('/api/purchases', purchaseRoutes);
+app.use('/api/trash', trashRoutes);
+app.use('/api/backup', backupRoutes);
 
 // Mount routes WITHOUT /api prefix (Fallback for frontend config mismatch)
+console.log('✅ Mounting Auth Routes at /auth and /api/auth');
 app.use('/auth', authRoutes);
 app.use('/sales', saleRoutes);
 app.use('/categories', categoryRoutes);
@@ -102,6 +115,10 @@ app.use('/expenses', expenseRoutes);
 app.use('/dashboard', dashboardRoutes);
 app.use('/khata', khataRoutes);
 app.use('/dailylogs', dailyLogRoutes);
+app.use('/suppliers', supplierRoutes);
+app.use('/purchases', purchaseRoutes);
+app.use('/trash', trashRoutes);
+app.use('/backup', backupRoutes);
 
 // 404 Handler for unmatched routes
 app.use((req, res) => {
@@ -119,6 +136,53 @@ app.use((err, req, res, next) => {
     success: false,
     message: 'Server Error'
   });
+});
+
+// 🕒 Scheduled Backups
+const performBackup = async (type) => {
+  if (isDriveConfigured && !isDriveConfigured()) {
+    console.log(`ℹ️  Skipping ${type} backup: Google Drive not configured (service-account.json missing).`);
+    return;
+  }
+
+  console.log(`⏳ Starting ${type} backup to Google Drive...`);
+  try {
+    const data = await generateBackupData();
+    const result = await uploadToDrive(data, type);
+    console.log(`✅ ${type} Backup Successful! File ID: ${result.id}`);
+  } catch (err) {
+    console.error(`❌ ${type} Backup Failed:`, err.message);
+    // Send Failure Email
+    try {
+      const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USERNAME;
+      if (adminEmail) {
+        await sendEmail({
+          email: adminEmail,
+          subject: `❌ Backup Failed: ${type}`,
+          message: `The automated ${type} backup failed.\n\nError: ${err.message}\n\nTime: ${new Date().toLocaleString()}`
+        });
+        console.log('📧 Failure notification email sent.');
+      }
+    } catch (emailErr) {
+      console.error('Failed to send failure notification email:', emailErr.message);
+    }
+  }
+};
+
+// Daily (Every day at midnight)
+cron.schedule('0 0 * * *', () => performBackup('daily'));
+
+// Weekly (Every Sunday at midnight)
+cron.schedule('0 0 * * 0', () => performBackup('weekly'));
+
+// Monthly (1st of every month at midnight)
+cron.schedule('0 0 1 * *', () => performBackup('monthly'));
+
+// Handle Unhandled Promise Rejections (Prevents silent crashes)
+process.on('unhandledRejection', (err) => {
+  console.error('❌ UNHANDLED REJECTION! Shutting down...');
+  console.error(err.name, err.message);
+  process.exit(1);
 });
 
 const PORT = process.env.PORT || 5000;

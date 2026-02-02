@@ -13,6 +13,11 @@ exports.getAllExpenses = async (req, res) => {
       query.category = category;
     }
 
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+
     const expenses = await Expense.find(query).sort({ createdAt: -1 }).populate('createdBy', 'name');
     res.status(200).json({ success: true, count: expenses.length, expenses });
   } catch (error) {
@@ -22,7 +27,12 @@ exports.getAllExpenses = async (req, res) => {
 
 exports.getExpense = async (req, res) => {
   try {
-    const expense = await Expense.findById(req.params.id);
+    const query = { _id: req.params.id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const expense = await Expense.findOne(query);
     if (!expense) {
       return res.status(404).json({ success: false, message: 'Expense not found' });
     }
@@ -36,7 +46,8 @@ exports.createExpense = async (req, res) => {
   try {
     const expense = await Expense.create({
       ...req.body,
-      createdBy: req.user ? req.user.id : null
+      createdBy: req.user ? req.user.id : null,
+      owner: req.user.ownerId || req.user._id
     });
     res.status(201).json({ success: true, message: 'Expense added', expense });
   } catch (error) {
@@ -46,7 +57,12 @@ exports.createExpense = async (req, res) => {
 
 exports.updateExpense = async (req, res) => {
   try {
-    const expense = await Expense.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    const query = { _id: req.params.id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const expense = await Expense.findOneAndUpdate(query, req.body, { new: true, runValidators: true });
     if (!expense) {
       return res.status(404).json({ success: false, message: 'Expense not found' });
     }
@@ -58,7 +74,12 @@ exports.updateExpense = async (req, res) => {
 
 exports.deleteExpense = async (req, res) => {
   try {
-    const expense = await Expense.findByIdAndDelete(req.params.id);
+    const query = { _id: req.params.id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const expense = await Expense.findOneAndDelete(query);
     if (!expense) {
       return res.status(404).json({ success: false, message: 'Expense not found' });
     }
@@ -76,9 +97,13 @@ exports.getTodayExpenses = async (req, res) => {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const expenses = await Expense.find({
-      date: { $gte: today, $lt: tomorrow }
-    }).sort({ createdAt: -1 });
+    let query = { date: { $gte: today, $lt: tomorrow } };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+
+    const expenses = await Expense.find(query).sort({ createdAt: -1 });
 
     const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
 
@@ -95,7 +120,16 @@ exports.getTodayExpenses = async (req, res) => {
 
 exports.getExpenseSummary = async (req, res) => {
   try {
+    let matchStage = {};
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      matchStage.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+
     const summary = await Expense.aggregate([
+      {
+        $match: matchStage
+      },
       {
         $group: {
           _id: '$category',

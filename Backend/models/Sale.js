@@ -40,8 +40,7 @@ const saleItemSchema = new mongoose.Schema({
 const saleSchema = new mongoose.Schema({
   invoiceNumber: {
     type: Number,
-    required: true,
-    unique: true
+    required: true
   },
   items: [saleItemSchema],
   subtotal: {
@@ -98,12 +97,20 @@ const saleSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  owner: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  }
 }, {
   timestamps: true
 });
 
-saleSchema.statics.getNextInvoiceNumber = async function () {
-  const lastSale = await this.findOne().sort({ invoiceNumber: -1 });
+// Ensure invoiceNumber is unique per owner
+saleSchema.index({ invoiceNumber: 1, owner: 1 }, { unique: true });
+
+saleSchema.statics.getNextInvoiceNumber = async function (ownerId) {
+  const lastSale = await this.findOne({ owner: ownerId }).sort({ invoiceNumber: -1 });
   return lastSale ? lastSale.invoiceNumber + 1 : 1001;
 };
 

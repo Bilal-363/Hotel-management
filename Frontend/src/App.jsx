@@ -21,6 +21,9 @@ import Purchases from '@/pages/Purchases';
 import Profile from '@/pages/Profile';
 import Login from '@/pages/Login';
 import Signup from '@/pages/Signup';
+import Users from '@/pages/Users';
+import ForgotPassword from '@/pages/ForgotPassword';
+import ResetPassword from '@/pages/ResetPassword';
 
 const PrivateRoute = ({ children }) => {
   const token = localStorage.getItem('token');
@@ -78,7 +81,8 @@ const PageTitleUpdater = () => {
       '/settings': 'Settings',
       '/profile': 'Profile',
       '/login': 'Login',
-      '/signup': 'Signup'
+      '/signup': 'Signup',
+      '/users': 'User Management'
     };
 
     let title = routeTitles[path];
@@ -101,6 +105,8 @@ function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:resetToken" element={<ResetPassword />} />
 
         <Route path="/" element={
           <PrivateRoute>
@@ -169,6 +175,12 @@ function App() {
         <Route path="/purchases" element={
           <PrivateRoute>
             <Layout><Purchases /></Layout>
+          </PrivateRoute>
+        } />
+
+        <Route path="/users" element={
+          <PrivateRoute>
+            <Layout><Users /></Layout>
           </PrivateRoute>
         } />
 

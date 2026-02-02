@@ -16,8 +16,8 @@ const khataSchema = new mongoose.Schema({
   remainingAmount: { type: Number, required: true },
   status: { type: String, enum: ['open', 'closed'], default: 'open' },
   installments: [installmentSchema],
-  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Khata', khataSchema);
-

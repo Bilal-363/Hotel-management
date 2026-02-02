@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Box, Grid, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Button } from '@mui/material';
 import { FaMoneyBillWave, FaShoppingCart, FaChartLine, FaExclamationTriangle, FaBoxes, FaReceipt, FaTruck } from 'react-icons/fa';
 import api from '../services/api';
+import toast from 'react-hot-toast';
 
 const StatCard = ({ icon, label, value, color }) => (
   <Paper sx={{ p: 3, borderLeft: `4px solid ${color}` }}>
@@ -37,7 +38,7 @@ const Dashboard = () => {
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
-  if (user.role !== 'admin') {
+  if (!['admin', 'superadmin'].includes(user.role)) {
     return (
       <Box sx={{ p: 4, textAlign: 'center' }}>
         <Typography variant="h5" color="error" fontWeight={700}>Access Denied</Typography>
@@ -48,9 +49,30 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchData();
+    const handleOnline = () => {
+      toast.success('Back Online!');
+      fetchData();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
   }, []);
 
   const fetchData = async () => {
+    if (!navigator.onLine) {
+      const cachedStats = localStorage.getItem('dashboard_stats_cache');
+      const cachedSales = localStorage.getItem('dashboard_sales_cache');
+      const cachedStock = localStorage.getItem('dashboard_stock_cache');
+      
+      if (cachedStats) setStats(JSON.parse(cachedStats));
+      if (cachedSales) setRecentSales(JSON.parse(cachedSales));
+      if (cachedStock) setLowStock(JSON.parse(cachedStock));
+      
+      if (cachedStats || cachedSales || cachedStock) {
+        toast('Loaded from cache (Offline)', { icon: '⚠️', id: 'offline-dash' });
+      }
+      setLoading(false);
+      return;
+    }
     try {
       const [statsRes, salesRes, stockRes] = await Promise.all([
         api.get('/dashboard/stats'),
@@ -60,6 +82,10 @@ const Dashboard = () => {
       setStats(statsRes.data.stats || {});
       setRecentSales(salesRes.data.sales || []);
       setLowStock(stockRes.data.products || []);
+
+      localStorage.setItem('dashboard_stats_cache', JSON.stringify(statsRes.data.stats || {}));
+      localStorage.setItem('dashboard_sales_cache', JSON.stringify(salesRes.data.sales || []));
+      localStorage.setItem('dashboard_stock_cache', JSON.stringify(stockRes.data.products || []));
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
     } finally {

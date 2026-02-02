@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { Box, Typography, List, ListItem, ListItemIcon, ListItemText, Divider, Button } from '@mui/material';
-import { FaHome, FaCashRegister, FaBoxes, FaReceipt, FaWallet, FaChartBar, FaCog, FaSignOutAlt, FaStore, FaBook, FaCalendar } from 'react-icons/fa';
+import { FaHome, FaCashRegister, FaBoxes, FaReceipt, FaWallet, FaChartBar, FaCog, FaSignOutAlt, FaStore, FaBook, FaCalendar, FaTruck, FaShoppingCart, FaUsers, FaUserSecret } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 
 const menuItems = [
@@ -12,18 +12,40 @@ const menuItems = [
   { path: '/reports', name: 'Reports', icon: <FaChartBar /> },
   { path: '/khata', name: 'Khata', icon: <FaBook /> },
   { path: '/daily-log', name: 'Daily Log', icon: <FaCalendar /> },
+  { path: '/suppliers', name: 'Suppliers', icon: <FaTruck /> },
+  { path: '/purchases', name: 'Purchases', icon: <FaShoppingCart /> },
+  { path: '/users', name: 'Users', icon: <FaUsers />, roles: ['superadmin'] },
   { path: '/settings', name: 'Settings', icon: <FaCog /> },
 ];
 
 const Sidebar = ({ collapsed = false }) => {
   const navigate = useNavigate();
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const superAdminToken = localStorage.getItem('superAdminToken');
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('tokenExpiry');
+    localStorage.removeItem('superAdminToken');
     toast.success('Logged out successfully!');
     navigate('/login');
+  };
+
+  const handleSwitchBack = () => {
+    if (superAdminToken) {
+      localStorage.setItem('token', superAdminToken);
+      localStorage.removeItem('superAdminToken');
+      
+      // Clear the impersonated user data so the app fetches the real superadmin user on reload
+      localStorage.removeItem('user');
+      
+      // We need to fetch the superadmin user details again or store them. 
+      // For simplicity, let's just reload which will fetch 'me' or redirect.
+      window.location.href = '/';
+    } else {
+      handleLogout();
+    }
   };
 
   return (
@@ -43,7 +65,7 @@ const Sidebar = ({ collapsed = false }) => {
       <Divider sx={{ borderColor: 'rgba(255,255,255,0.1)' }} />
 
       <List sx={{ flex: 1, px: 2, py: 2 }}>
-        {menuItems.map((item) => (
+        {menuItems.filter(item => !item.roles || item.roles.includes(user.role)).map((item) => (
           <ListItem key={item.path} disablePadding sx={{ mb: 0.5 }}>
             <NavLink to={item.path} style={{ textDecoration: 'none', width: '100%' }}>
               {({ isActive }) => (
@@ -58,6 +80,11 @@ const Sidebar = ({ collapsed = false }) => {
       </List>
 
       <Box sx={{ p: 2 }}>
+        {superAdminToken && (
+          <Button fullWidth variant="contained" color="warning" startIcon={<FaUserSecret />} onClick={handleSwitchBack} sx={{ mb: 1, py: 1.2 }}>
+            {collapsed ? '' : 'Back to Super Admin'}
+          </Button>
+        )}
         <Button fullWidth variant="contained" color="error" startIcon={<FaSignOutAlt />} onClick={handleLogout} sx={{ py: 1.2 }}>
           {collapsed ? '' : 'Logout'}
         </Button>

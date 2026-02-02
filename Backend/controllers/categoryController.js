@@ -4,6 +4,10 @@ exports.getAllCategories = async (req, res) => {
   try {
     const { type } = req.query;
     let query = { isActive: true };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
     if (type) {
       query.type = type;
     }
@@ -16,7 +20,12 @@ exports.getAllCategories = async (req, res) => {
 
 exports.getProductCategories = async (req, res) => {
   try {
-    const categories = await Category.find({ type: 'product', isActive: true }).sort({ name: 1 });
+    const query = { type: 'product', isActive: true };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const categories = await Category.find(query).sort({ name: 1 });
     res.status(200).json({ success: true, count: categories.length, categories });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -25,7 +34,12 @@ exports.getProductCategories = async (req, res) => {
 
 exports.getExpenseCategories = async (req, res) => {
   try {
-    const categories = await Category.find({ type: 'expense', isActive: true }).sort({ name: 1 });
+    const query = { type: 'expense', isActive: true };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const categories = await Category.find(query).sort({ name: 1 });
     res.status(200).json({ success: true, count: categories.length, categories });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -34,7 +48,12 @@ exports.getExpenseCategories = async (req, res) => {
 
 exports.getCategory = async (req, res) => {
   try {
-    const category = await Category.findById(req.params.id);
+    const query = { _id: req.params.id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const category = await Category.findOne(query);
     if (!category) {
       return res.status(404).json({ success: false, message: 'Category not found' });
     }
@@ -46,7 +65,7 @@ exports.getCategory = async (req, res) => {
 
 exports.createCategory = async (req, res) => {
   try {
-    const category = await Category.create(req.body);
+    const category = await Category.create({ ...req.body, owner: req.user.ownerId || req.user._id });
     res.status(201).json({ success: true, message: 'Category created', category });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -55,7 +74,12 @@ exports.createCategory = async (req, res) => {
 
 exports.updateCategory = async (req, res) => {
   try {
-    const category = await Category.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    const query = { _id: req.params.id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const category = await Category.findOneAndUpdate(query, req.body, { new: true, runValidators: true });
     if (!category) {
       return res.status(404).json({ success: false, message: 'Category not found' });
     }
@@ -67,7 +91,12 @@ exports.updateCategory = async (req, res) => {
 
 exports.deleteCategory = async (req, res) => {
   try {
-    const category = await Category.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
+    const query = { _id: req.params.id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const category = await Category.findOneAndUpdate(query, { isActive: false }, { new: true });
     if (!category) {
       return res.status(404).json({ success: false, message: 'Category not found' });
     }

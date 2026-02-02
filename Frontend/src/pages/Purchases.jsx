@@ -20,12 +20,23 @@ const Purchases = () => {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [qty, setQty] = useState('');
   const [cost, setCost] = useState('');
+  const [filterSupplier, setFilterSupplier] = useState('All');
 
   useEffect(() => {
     fetchData();
+    const handleOnline = () => {
+      toast.success('Back Online!');
+      fetchData();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
   }, []);
 
   const fetchData = async () => {
+    if (!navigator.onLine) {
+      loadFromCache();
+      return;
+    }
     try {
       const [supRes, prodRes, purRes] = await Promise.all([
         api.get('/suppliers'),
@@ -35,9 +46,25 @@ const Purchases = () => {
       setSuppliers(supRes.data.suppliers || []);
       setProducts(prodRes.data.products || []);
       setPurchases(purRes.data.purchases || []);
+      
+      // Cache Data
+      localStorage.setItem('suppliers_cache', JSON.stringify(supRes.data.suppliers || []));
+      localStorage.setItem('products_cache', JSON.stringify(prodRes.data.products || []));
+      localStorage.setItem('purchases_cache', JSON.stringify(purRes.data.purchases || []));
     } catch (err) {
       console.error(err);
+      loadFromCache();
     }
+  };
+
+  const loadFromCache = () => {
+    const cSup = localStorage.getItem('suppliers_cache');
+    const cProd = localStorage.getItem('products_cache');
+    const cPur = localStorage.getItem('purchases_cache');
+    if (cSup) setSuppliers(JSON.parse(cSup));
+    if (cProd) setProducts(JSON.parse(cProd));
+    if (cPur) setPurchases(JSON.parse(cPur));
+    if (cSup || cProd || cPur) toast('Loaded from cache (Offline)', { icon: '⚠️', id: 'offline-pur' });
   };
 
   const addItem = () => {
@@ -62,6 +89,10 @@ const Purchases = () => {
   const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
 
   const handleSubmit = async () => {
+    if (!navigator.onLine) {
+      toast.error('You are offline. Cannot save purchase right now.');
+      return;
+    }
     if (!supplierId || items.length === 0) {
       toast.error('Select supplier and add items');
       return;
@@ -84,6 +115,18 @@ const Purchases = () => {
       fetchData();
     } catch (err) {
       toast.error('Failed to save purchase');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!navigator.onLine) return toast.error('Cannot delete while offline');
+    if (!window.confirm('Delete this purchase? Stock and Supplier Balance will be reversed.')) return;
+    try {
+      await api.delete(`/purchases/${id}`);
+      toast.success('Purchase deleted');
+      fetchData();
+    } catch (err) {
+      toast.error('Failed to delete');
     }
   };
 
@@ -160,7 +203,20 @@ const Purchases = () => {
         {/* Recent Purchases List */}
         <Grid item xs={12} lg={7}>
           <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" fontWeight={600} mb={2}>Recent Purchases</Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6" fontWeight={600}>Recent Purchases</Typography>
+              <TextField
+                select
+                size="small"
+                label="Filter Supplier"
+                value={filterSupplier}
+                onChange={(e) => setFilterSupplier(e.target.value)}
+                sx={{ width: 180 }}
+              >
+                <MenuItem value="All">All Suppliers</MenuItem>
+                {suppliers.map(s => <MenuItem key={s._id} value={s._id}>{s.name}</MenuItem>)}
+              </TextField>
+            </Box>
             <TableContainer>
               <Table size="small">
                 <TableHead>
@@ -170,10 +226,13 @@ const Purchases = () => {
                     <TableCell>Items</TableCell>
                     <TableCell>Total</TableCell>
                     <TableCell>Paid</TableCell>
+                    <TableCell>Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {purchases.map((p) => (
+                  {purchases
+                    .filter(p => filterSupplier === 'All' || p.supplier?._id === filterSupplier)
+                    .map((p) => (
                     <TableRow key={p._id}>
                       <TableCell>{new Date(p.date).toLocaleDateString()}</TableCell>
                       <TableCell>{p.supplier?.name}</TableCell>
@@ -186,6 +245,9 @@ const Purchases = () => {
                       </TableCell>
                       <TableCell fontWeight={600}>{formatPKR(p.totalAmount)}</TableCell>
                       <TableCell sx={{ color: 'success.main' }}>{formatPKR(p.paidAmount)}</TableCell>
+                      <TableCell>
+                        <IconButton size="small" color="error" onClick={() => handleDelete(p._id)}><FaTrash /></IconButton>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

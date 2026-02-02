@@ -23,13 +23,33 @@ const KhataList = () => {
     pageStyle: pagePrintStyle
   });
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { 
+    load(); 
+    const handleOnline = () => {
+      toast.success('Back Online!');
+      load();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
 
   const load = async () => {
+    if (!navigator.onLine) {
+      const cached = localStorage.getItem('khatas_list_cache');
+      if (cached) {
+        setKhatas(JSON.parse(cached));
+        toast('Loaded from cache (Offline)', { icon: '⚠️', id: 'offline-khatas' });
+      } else {
+        toast.error('Offline and no cache found');
+      }
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const res = await getKhatas();
       setKhatas(res.khatas || []);
+      localStorage.setItem('khatas_list_cache', JSON.stringify(res.khatas || []));
     } catch {
       toast.error('Failed to load khatas');
     } finally {
@@ -55,6 +75,7 @@ const KhataList = () => {
   };
 
   const handleDelete = async () => {
+    if (!navigator.onLine) return toast.error('Cannot delete while offline');
     try {
       if (!khataToDelete) return;
       await deleteKhata(khataToDelete._id);
@@ -99,6 +120,7 @@ const KhataList = () => {
   };
 
   const handleBulkDelete = async () => {
+    if (!navigator.onLine) return toast.error('Cannot delete while offline');
     if (!window.confirm(`Are you sure you want to delete ${selected.length} khatas?`)) return;
 
     try {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { Box, Paper, Typography, Button, TextField, Chip, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Dialog, DialogTitle, DialogContent, DialogActions, Alert, IconButton, Tooltip, InputAdornment, Checkbox } from '@mui/material';
-import { FaUsers, FaPlus, FaBook, FaHistory, FaEdit, FaTrash, FaList, FaFilePdf, FaSearch, FaFileExcel, FaFileCsv, FaArrowLeft, FaEye } from 'react-icons/fa';
+import { FaUsers, FaPlus, FaBook, FaHistory, FaEdit, FaTrash, FaList, FaFilePdf, FaSearch, FaFileExcel, FaFileCsv, FaArrowLeft, FaEye, FaWhatsapp } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import { getCustomers, createCustomer, createKhata, getCustomerHistory, updateCustomer, deleteCustomer, addInstallments, payInstallment, getKhata } from '../services/khataService';
 import { useReactToPrint } from 'react-to-print';
@@ -37,15 +37,33 @@ const KhataCustomers = () => {
 
   useEffect(() => {
     load();
+    const handleOnline = () => {
+      toast.success('Back Online!');
+      load();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
   }, []);
 
   const load = async () => {
+    if (!navigator.onLine) {
+      const cached = localStorage.getItem('customers_cache');
+      if (cached) {
+        setCustomers(JSON.parse(cached));
+        toast('Loaded from cache (Offline)', { icon: '⚠️', id: 'offline-cust' });
+      } else {
+        toast.error('Offline and no cache found');
+      }
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
       const res = await getCustomers();
       const list = (res.customers || []).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
       setCustomers(list);
+      localStorage.setItem('customers_cache', JSON.stringify(list));
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Failed to load customers');
       toast.error('Failed to load customers');
@@ -63,6 +81,7 @@ const KhataCustomers = () => {
   }, [customers, search]);
 
   const handleCreate = async () => {
+    if (!navigator.onLine) return toast.error('Cannot create while offline');
     try {
       if (!form.name) { toast.error('Name required'); return; }
 
@@ -119,6 +138,7 @@ const KhataCustomers = () => {
   };
 
   const handleCreateKhata = async () => {
+    if (!navigator.onLine) return toast.error('Cannot create while offline');
     try {
       const totalAmount = Number(khataForm.totalAmount || '0');
       if (!khataForm.title || !totalAmount || totalAmount <= 0) {
@@ -141,6 +161,7 @@ const KhataCustomers = () => {
   };
 
   const handleEdit = async () => {
+    if (!navigator.onLine) return toast.error('Cannot edit while offline');
     try {
       if (!current?._id) return;
       await updateCustomer(current._id, editForm);
@@ -162,6 +183,7 @@ const KhataCustomers = () => {
   };
 
   const handleDelete = async () => {
+    if (!navigator.onLine) return toast.error('Cannot delete while offline');
     try {
       if (!customerToDelete) return;
       await deleteCustomer(customerToDelete._id);
@@ -200,6 +222,22 @@ const KhataCustomers = () => {
     }
   };
 
+  const handleWhatsApp = (c) => {
+    if (!c.phone) return toast.error('No phone number found');
+    let cleanPhone = c.phone.replace(/\D/g, '');
+
+    // Format for Pakistan (03xx -> 923xx) if applicable
+    if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
+      cleanPhone = '92' + cleanPhone.substring(1);
+    }
+
+    const balance = c.khataBalance || 0;
+    
+    const message = `Hello ${c.name}, your current Khata balance with Haji Waris Ali Hotel is ${formatPKR(balance)}.`;
+    const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
+  };
+
   // Bulk Selection Logic
   const [selected, setSelected] = useState([]);
 
@@ -232,6 +270,7 @@ const KhataCustomers = () => {
   };
 
   const handleBulkDelete = async () => {
+    if (!navigator.onLine) return toast.error('Cannot delete while offline');
     if (!window.confirm(`Are you sure you want to delete ${selected.length} customers?`)) return;
 
     try {
@@ -370,6 +409,11 @@ const KhataCustomers = () => {
                         <TableCell sx={{ color: '#64748b' }}>{c.phone}</TableCell>
                         <TableCell sx={{ color: '#64748b' }}>{c.address}</TableCell>
                         <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                          <Tooltip title="Share Khata">
+                            <IconButton size="small" onClick={() => handleWhatsApp(c)} sx={{ color: '#25D366', mr: 1 }}>
+                              <FaWhatsapp />
+                            </IconButton>
+                          </Tooltip>
                           <Tooltip title="Create Khata">
                             <IconButton size="small" onClick={() => quickKhata(c)} sx={{ color: '#3b82f6', mr: 1 }}>
                               <FaBook />

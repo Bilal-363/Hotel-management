@@ -20,6 +20,11 @@ exports.getAllSales = async (req, res) => {
       query.khataId = req.query.khataId;
     }
 
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+
     const sales = await Sale.find(query).sort({ createdAt: -1 }).populate('createdBy', 'name');
     res.status(200).json({ success: true, count: sales.length, sales });
   } catch (error) {
@@ -29,7 +34,12 @@ exports.getAllSales = async (req, res) => {
 
 exports.getSale = async (req, res) => {
   try {
-    const sale = await Sale.findById(req.params.id).populate('createdBy', 'name');
+    const query = { _id: req.params.id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const sale = await Sale.findOne(query).populate('createdBy', 'name');
     if (!sale) {
       return res.status(404).json({ success: false, message: 'Sale not found' });
     }
@@ -57,7 +67,12 @@ exports.createSale = async (req, res) => {
 
     if (items && items.length > 0) {
       for (const item of items) {
-        const product = await Product.findById(item.productId);
+        const productQuery = { _id: item.productId };
+        if (req.user.role !== 'superadmin') {
+          const ownerId = req.user.ownerId || req.user._id;
+          productQuery.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+        }
+        const product = await Product.findOne(productQuery);
 
         if (!product) {
           return res.status(404).json({ success: false, message: `Product not found: ${item.productId}` });
@@ -67,8 +82,11 @@ exports.createSale = async (req, res) => {
           return res.status(400).json({ success: false, message: `Insufficient stock for ${product.name}` });
         }
 
-        const itemTotal = product.sellPrice * item.quantity;
-        const itemProfit = (product.sellPrice - product.buyPrice) * item.quantity;
+        // Use custom price if provided, otherwise default to product's sellPrice
+        const sellPrice = (item.price !== undefined && item.price !== null) ? Number(item.price) : product.sellPrice;
+
+        const itemTotal = sellPrice * item.quantity;
+        const itemProfit = (sellPrice - product.buyPrice) * item.quantity;
         const itemCost = product.buyPrice * item.quantity;
 
         saleItems.push({
@@ -77,7 +95,7 @@ exports.createSale = async (req, res) => {
           productSize: product.size,
           quantity: item.quantity,
           buyPrice: product.buyPrice,
-          sellPrice: product.sellPrice,
+          sellPrice: sellPrice,
           itemTotal,
           itemProfit
         });
@@ -98,7 +116,12 @@ exports.createSale = async (req, res) => {
     let khataToUpdate = null;
 
     if (paymentMethod === 'Khata' && khataId) {
-      khataToUpdate = await Khata.findById(khataId);
+      const khataQuery = { _id: khataId };
+      if (req.user.role !== 'superadmin') {
+        const ownerId = req.user.ownerId || req.user._id;
+        khataQuery.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+      }
+      khataToUpdate = await Khata.findOne(khataQuery);
       if (khataToUpdate) {
         // Calculate what the new balance WILL be
         let currentRemaining = khataToUpdate.remainingAmount;
@@ -118,7 +141,7 @@ exports.createSale = async (req, res) => {
 
     while (retries > 0) {
       try {
-        finalInvoiceNumber = await Sale.getNextInvoiceNumber();
+        finalInvoiceNumber = await Sale.getNextInvoiceNumber(req.user.ownerId || req.user._id);
 
         sale = await Sale.create({
           invoiceNumber: finalInvoiceNumber,
@@ -134,6 +157,7 @@ exports.createSale = async (req, res) => {
           customerName,
           customerPhone,
           createdBy: req.user ? req.user._id : null,
+          owner: req.user.ownerId || req.user._id,
           khataId: paymentMethod === 'Khata' ? khataId : undefined
         });
 
@@ -216,9 +240,13 @@ exports.getTodaySales = async (req, res) => {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const sales = await Sale.find({
-      createdAt: { $gte: today, $lt: tomorrow }
-    }).sort({ createdAt: -1 });
+    let query = { createdAt: { $gte: today, $lt: tomorrow } };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+
+    const sales = await Sale.find(query).sort({ createdAt: -1 });
 
     const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
     const totalProfit = sales.reduce((sum, sale) => sum + sale.totalProfit, 0);
@@ -237,7 +265,12 @@ exports.getTodaySales = async (req, res) => {
 
 exports.getSaleByInvoice = async (req, res) => {
   try {
-    const sale = await Sale.findOne({ invoiceNumber: req.params.invoiceNumber });
+    const query = { invoiceNumber: req.params.invoiceNumber };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const sale = await Sale.findOne(query);
     if (!sale) {
       return res.status(404).json({ success: false, message: 'Invoice not found' });
     }
@@ -249,7 +282,12 @@ exports.getSaleByInvoice = async (req, res) => {
 
 exports.refundSale = async (req, res) => {
   try {
-    const sale = await Sale.findById(req.params.id);
+    const query = { _id: req.params.id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const sale = await Sale.findOne(query);
 
     if (!sale) {
       return res.status(404).json({ success: false, message: 'Sale not found' });
@@ -278,7 +316,12 @@ exports.refundSale = async (req, res) => {
 
 exports.deleteSale = async (req, res) => {
   try {
-    const sale = await Sale.findById(req.params.id);
+    const query = { _id: req.params.id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const sale = await Sale.findOne(query);
 
     if (!sale) {
       return res.status(404).json({ success: false, message: 'Sale not found' });

@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
-import { FaChartBar, FaRupeeSign, FaChartLine, FaWallet, FaCalculator } from 'react-icons/fa';
+import { FaChartBar, FaRupeeSign, FaChartLine, FaWallet, FaCalculator, FaChartArea } from 'react-icons/fa';
 import api from '../services/api';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
+import toast from 'react-hot-toast';
 
 const StatCard = ({ icon, label, value, color }) => (
   <Paper sx={{ p: 3, borderLeft: `4px solid ${color}` }}>
@@ -28,7 +29,7 @@ const Reports = () => {
   const [products, setProducts] = useState([]);
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
-  if (user.role !== 'admin') {
+  if (!['admin', 'superadmin'].includes(user.role)) {
     return (
       <Box sx={{ p: 4, textAlign: 'center' }}>
         <Typography variant="h5" color="error" fontWeight={700}>Access Denied</Typography>
@@ -74,17 +75,41 @@ const Reports = () => {
 
   const fetchReport = async () => {
     setLoading(true);
+    
+    if (!navigator.onLine) {
+      const cachedReport = localStorage.getItem('reports_data_cache');
+      const cachedProducts = localStorage.getItem('reports_products_cache');
+      
+      if (cachedReport) setReport(JSON.parse(cachedReport));
+      if (cachedProducts) setProducts(JSON.parse(cachedProducts));
+      
+      if (cachedReport) {
+        toast('Loaded from cache (Offline)', { icon: '⚠️', id: 'offline-reports' });
+      } else {
+        toast.error('Offline and no report cached');
+      }
+      setLoading(false);
+      return;
+    }
+
     try {
       const [salesRes, expenseRes, productsRes] = await Promise.all([
         api.get(`/dashboard/sales-report${startDate && endDate ? `?startDate=${startDate}&endDate=${endDate}` : ''}`),
         api.get(`/expenses/summary`),
         api.get('/products')
       ]);
-      setReport({
+      const newReport = {
         ...salesRes.data.report,
         totalExpenses: expenseRes.data.totalExpenses || 0
-      });
+      };
+      setReport(newReport);
       setProducts(productsRes.data.products || []);
+
+      // Only cache if it's the default view (no dates)
+      if (!startDate && !endDate) {
+        localStorage.setItem('reports_data_cache', JSON.stringify(newReport));
+        localStorage.setItem('reports_products_cache', JSON.stringify(productsRes.data.products || []));
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -94,6 +119,12 @@ const Reports = () => {
 
   useEffect(() => {
     fetchReport();
+    const handleOnline = () => {
+      toast.success('Back Online!');
+      fetchReport();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
   }, []);
 
   const formatPKR = (amount) => `Rs. ${(amount || 0).toLocaleString()}`;
@@ -106,6 +137,63 @@ const Reports = () => {
   // Calculate totals from the products list directly for reliability
   const totalStockCost = products.reduce((sum, p) => sum + ((Number(p.buyPrice) || 0) * (Number(p.stock) || 0)), 0);
   const totalStockRevenue = products.reduce((sum, p) => sum + ((Number(p.sellPrice) || 0) * (Number(p.stock) || 0)), 0);
+
+  // Simple SVG Line Chart Component
+  const SimpleLineChart = ({ data }) => {
+    if (!data || data.length === 0) return <Typography color="text.secondary" align="center" py={4}>No data for graph</Typography>;
+
+    const height = 200;
+    const width = 600; // Viewbox width
+    const padding = 20;
+    
+    const maxVal = Math.max(...data.map(d => Math.max(d.sales, d.profit, d.expense)), 100);
+    const minVal = 0;
+    
+    const getX = (index) => padding + (index * (width - 2 * padding)) / (data.length - 1 || 1);
+    const getY = (val) => height - padding - ((val - minVal) / (maxVal - minVal)) * (height - 2 * padding);
+
+    const makePath = (key, color) => {
+      const points = data.map((d, i) => `${getX(i)},${getY(d[key] || 0)}`).join(' ');
+      return <polyline points={points} fill="none" stroke={color} strokeWidth="2" />;
+    };
+
+    return (
+      <Box sx={{ width: '100%', overflowX: 'auto' }}>
+        <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto', minWidth: '600px' }}>
+          {/* Grid Lines */}
+          <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#e2e8f0" />
+          <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#e2e8f0" />
+          
+          {/* Paths */}
+          {makePath('sales', '#3b82f6')}
+          {makePath('profit', '#10b981')}
+          {makePath('expense', '#ef4444')}
+
+          {/* Points & Tooltips (Simplified) */}
+          {data.map((d, i) => (
+            <g key={i}>
+              <circle cx={getX(i)} cy={getY(d.sales)} r="3" fill="#3b82f6" />
+              <text x={getX(i)} y={height - 5} fontSize="10" textAnchor="middle" fill="#64748b">{new Date(d.date).getDate()}</text>
+            </g>
+          ))}
+        </svg>
+        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 3, mt: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ width: 12, height: 12, bgcolor: '#3b82f6', borderRadius: '50%' }} />
+            <Typography variant="caption">Sales</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ width: 12, height: 12, bgcolor: '#10b981', borderRadius: '50%' }} />
+            <Typography variant="caption">Profit</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ width: 12, height: 12, bgcolor: '#ef4444', borderRadius: '50%' }} />
+            <Typography variant="caption">Expense</Typography>
+          </Box>
+        </Box>
+      </Box>
+    );
+  };
 
   return (
     <Box>
@@ -133,6 +221,14 @@ const Reports = () => {
           <StatCard icon={<FaWallet />} label="Total Expenses" value={formatPKR(report.totalExpenses)} color="#ef4444" />
         </Grid>
       </Grid>
+
+      {/* Graph Section */}
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" fontWeight={600} mb={2} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <FaChartArea /> Profit & Loss Trend
+        </Typography>
+        <SimpleLineChart data={report.graphData} />
+      </Paper>
 
       <Grid container spacing={3}>
         <Grid item xs={12} md={6}>

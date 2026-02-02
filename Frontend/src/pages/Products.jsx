@@ -13,7 +13,8 @@ const Products = () => {
   const [modal, setModal] = useState(false);
   const [categoryModal, setCategoryModal] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [formData, setFormData] = useState({ name: '', category: '', buyPrice: '', sellPrice: '', stock: '', minStock: 10 });
+  const [formData, setFormData] = useState({ name: '', category: '', size: '', buyPrice: '', sellPrice: '', stock: '', minStock: 10 });
+  const [sizes, setSizes] = useState([]);
   const [categoryFormData, setCategoryFormData] = useState({ name: '', icon: '📦' });
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
@@ -39,6 +40,11 @@ const Products = () => {
     const handleOnline = () => fetchData();
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
+  }, []);
+
+  useEffect(() => {
+    const savedSizes = JSON.parse(localStorage.getItem('customSizes') || '[]');
+    setSizes(savedSizes);
   }, []);
 
   // SESSION CHECK
@@ -153,10 +159,10 @@ const Products = () => {
   const openModal = (product = null) => {
     if (product) {
       setEditId(product._id);
-      setFormData({ name: product.name, category: product.category, buyPrice: product.buyPrice, sellPrice: product.sellPrice, stock: product.stock, minStock: product.minStock });
+      setFormData({ name: product.name, category: product.category, size: product.size || '', buyPrice: product.buyPrice, sellPrice: product.sellPrice, stock: product.stock, minStock: product.minStock });
     } else {
       setEditId(null);
-      setFormData({ name: '', category: categories[0]?.name || '', buyPrice: '', sellPrice: '', stock: '', minStock: 10 });
+      setFormData({ name: '', category: categories[0]?.name || '', size: '', buyPrice: '', sellPrice: '', stock: '', minStock: 10 });
     }
     setModal(true);
   };
@@ -441,9 +447,15 @@ const Products = () => {
         <DialogContent>
           <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
             <TextField fullWidth label="Product Name" name="name" value={formData.name} onChange={handleChange} required />
-            <TextField fullWidth select label="Category" name="category" value={formData.category} onChange={handleChange} required>
-              {categories.map((cat) => <MenuItem key={cat._id} value={cat.name}>{cat.icon} {cat.name}</MenuItem>)}
-            </TextField>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField fullWidth select label="Category" name="category" value={formData.category} onChange={handleChange} required>
+                {categories.map((cat) => <MenuItem key={cat._id} value={cat.name}>{cat.icon} {cat.name}</MenuItem>)}
+              </TextField>
+              <TextField fullWidth select label="Size" name="size" value={formData.size} onChange={handleChange}>
+                <MenuItem value="">None</MenuItem>
+                {sizes.map((s) => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+              </TextField>
+            </Box>
             <Box sx={{ display: 'flex', gap: 2 }}>
               <TextField fullWidth label="Buy Price" name="buyPrice" type="number" value={formData.buyPrice} onChange={handleChange} required />
               <TextField fullWidth label="Sell Price" name="sellPrice" type="number" value={formData.sellPrice} onChange={handleChange} required />

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Box, Paper, Typography, Button, TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Tooltip } from '@mui/material';
-import { FaPlus, FaEdit, FaTrash, FaTruck, FaMoneyBillWave } from 'react-icons/fa';
+import { FaPlus, FaEdit, FaTrash, FaTruck, FaMoneyBillWave, FaWhatsapp } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 
@@ -15,13 +15,34 @@ const Suppliers = () => {
 
   useEffect(() => {
     fetchSuppliers();
+    const handleOnline = () => {
+      toast.success('Back Online!');
+      fetchSuppliers();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
   }, []);
 
   const fetchSuppliers = async () => {
+    if (!navigator.onLine) {
+      loadFromCache();
+      return;
+    }
     try {
       const res = await api.get('/suppliers');
       setSuppliers(res.data.suppliers || []);
+      localStorage.setItem('suppliers_cache', JSON.stringify(res.data.suppliers || []));
     } catch (err) {
+      loadFromCache();
+    }
+  };
+
+  const loadFromCache = () => {
+    const cached = localStorage.getItem('suppliers_cache');
+    if (cached) {
+      setSuppliers(JSON.parse(cached));
+      toast('Loaded from cache (Offline)', { icon: '⚠️', id: 'offline-sup' });
+    } else {
       toast.error('Failed to load suppliers');
     }
   };
@@ -82,6 +103,21 @@ const Suppliers = () => {
     }
   };
 
+  const handleWhatsApp = (s) => {
+    if (!s.phone) return toast.error('No phone number found');
+    let cleanPhone = s.phone.replace(/\D/g, ''); // Remove non-digits
+
+    // Format for Pakistan (03xx -> 923xx) if applicable
+    if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
+      cleanPhone = '92' + cleanPhone.substring(1);
+    }
+
+    const status = s.balance > 0 ? 'Payable' : 'Receivable';
+    const message = `Hello ${s.name}, your current balance with Haji Waris Ali Hotel is ${formatPKR(s.balance)} (${status}).`;
+    const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
+  };
+
   const formatPKR = (amount) => `Rs. ${(amount || 0).toLocaleString()}`;
 
   return (
@@ -115,6 +151,9 @@ const Suppliers = () => {
                     {formatPKR(s.balance)}
                   </TableCell>
                   <TableCell>
+                    <Tooltip title="Share on WhatsApp">
+                      <IconButton size="small" color="success" onClick={() => handleWhatsApp(s)}><FaWhatsapp /></IconButton>
+                    </Tooltip>
                     <Tooltip title="Record Payment">
                       <IconButton size="small" color="success" onClick={() => openPayModal(s)}><FaMoneyBillWave /></IconButton>
                     </Tooltip>

@@ -13,7 +13,8 @@ exports.createOrUpdateLog = async (req, res) => {
 
     // Find if a log already exists for this day
     let log = await DailyLog.findOne({
-      date: { $gte: startOfDay, $lt: endOfDay }
+      date: { $gte: startOfDay, $lt: endOfDay },
+      $or: [{ owner: req.user.ownerId || req.user._id }, { owner: { $exists: false } }, { owner: null }]
     });
 
     if (log) {
@@ -25,7 +26,8 @@ exports.createOrUpdateLog = async (req, res) => {
       log = await DailyLog.create({
         date: startOfDay,
         note,
-        createdBy: req.user?.id
+        createdBy: req.user?.id,
+        owner: req.user.ownerId || req.user._id
       });
     }
 
@@ -40,6 +42,11 @@ exports.getLogs = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     let query = {};
+
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
 
     if (startDate && endDate) {
       query.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
@@ -56,7 +63,12 @@ exports.getLogs = async (req, res) => {
 exports.deleteLog = async (req, res) => {
   try {
     const { id } = req.params;
-    await DailyLog.findByIdAndDelete(id);
+    const query = { _id: id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    await DailyLog.findOneAndDelete(query);
     res.status(200).json({ success: true, message: 'Log deleted' });
   } catch (error) {
     console.error('deleteLog error:', error);

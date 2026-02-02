@@ -58,14 +58,34 @@ const KhataDetail = () => {
     }
   };
 
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => { 
+    load(); 
+    const handleOnline = () => {
+      toast.success('Back Online!');
+      load();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [id]);
 
   const load = async () => {
+    if (!navigator.onLine) {
+      const cached = localStorage.getItem(`khata_detail_${id}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        setData({ khata: parsed.khata, transactions: parsed.transactions || [] });
+        setEditTitle(parsed.khata?.title || '');
+        toast('Loaded from cache (Offline)', { icon: '⚠️', id: 'offline-kdetail' });
+      }
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const res = await getKhata(id);
       setData({ khata: res.khata, transactions: res.transactions || [] });
       setEditTitle(res.khata?.title || '');
+      localStorage.setItem(`khata_detail_${id}`, JSON.stringify(res));
     } catch {
       toast.error('Failed to load khata');
     } finally {
@@ -74,6 +94,7 @@ const KhataDetail = () => {
   };
 
   const handleCharge = async () => {
+    if (!navigator.onLine) return toast.error('Cannot add charge while offline');
     try {
       const amount = Number(chargeAmount || '0');
       if (!amount || amount <= 0) { toast.error('Enter amount'); return; }
@@ -94,6 +115,7 @@ const KhataDetail = () => {
     setInstallations(next);
   };
   const handleInstallments = async () => {
+    if (!navigator.onLine) return toast.error('Cannot add installments while offline');
     try {
       const payload = installations.map(i => ({ amount: Number(i.amount || '0'), dueDate: i.dueDate, productName: i.productName }));
       if (payload.some(p => !p.amount || !p.dueDate)) { toast.error('Fill amount and due date'); return; }
@@ -114,6 +136,7 @@ const KhataDetail = () => {
   };
 
   const handlePay = async () => {
+    if (!navigator.onLine) return toast.error('Cannot pay while offline');
     const amount = Number(payAmount || '0');
     if (!amount || amount <= 0) { toast.error('Invalid amount'); return; }
     try {
@@ -127,6 +150,7 @@ const KhataDetail = () => {
   };
 
   const saveTitle = async () => {
+    if (!navigator.onLine) return toast.error('Cannot update while offline');
     try {
       await updateKhata(id, { title: editTitle });
       toast.success('Title updated');

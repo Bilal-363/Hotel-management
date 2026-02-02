@@ -16,7 +16,7 @@ const Expenses = () => {
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
-  if (user.role !== 'admin') {
+  if (!['admin', 'superadmin'].includes(user.role)) {
     return (
       <Box sx={{ p: 4, textAlign: 'center' }}>
         <Typography variant="h5" color="error" fontWeight={700}>Access Denied</Typography>
@@ -33,9 +33,29 @@ const Expenses = () => {
 
   useEffect(() => {
     fetchData();
+    const handleOnline = () => {
+      toast.success('Back Online!');
+      fetchData();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
   }, []);
 
   const fetchData = async () => {
+    if (!navigator.onLine) {
+      const cExp = localStorage.getItem('expenses_cache');
+      const cCat = localStorage.getItem('expense_cats_cache');
+      if (cExp) setExpenses(JSON.parse(cExp));
+      if (cCat) setCategories(JSON.parse(cCat));
+      
+      if (cExp || cCat) {
+        toast('Loaded from cache (Offline)', { icon: '⚠️', id: 'offline-exp' });
+      } else {
+        toast.error('Offline and no cache found');
+      }
+      setLoading(false);
+      return;
+    }
     try {
       const [expensesRes, categoriesRes] = await Promise.all([
         api.get('/expenses'),
@@ -43,6 +63,8 @@ const Expenses = () => {
       ]);
       setExpenses(expensesRes.data.expenses || []);
       setCategories(categoriesRes.data.categories || []);
+      localStorage.setItem('expenses_cache', JSON.stringify(expensesRes.data.expenses || []));
+      localStorage.setItem('expense_cats_cache', JSON.stringify(categoriesRes.data.categories || []));
     } catch (err) {
       toast.error('Failed to load data');
     } finally {
@@ -76,6 +98,7 @@ const Expenses = () => {
 
   // Bulk Delete Handler
   const handleBulkDelete = async () => {
+    if (!navigator.onLine) return toast.error('Cannot delete while offline');
     if (selectedExpenses.length === 0) {
       toast.error('Please select expenses to delete');
       return;
@@ -115,6 +138,7 @@ const Expenses = () => {
   };
 
   const handleSubmit = async () => {
+    if (!navigator.onLine) return toast.error('Cannot save while offline');
     try {
       if (editId) {
         await api.put(`/expenses/${editId}`, formData);
@@ -131,6 +155,7 @@ const Expenses = () => {
   };
 
   const handleCategorySubmit = async () => {
+    if (!navigator.onLine) return toast.error('Cannot save while offline');
     try {
       await api.post('/categories', { ...categoryFormData, type: 'expense' });
       toast.success('Category created!');
@@ -142,6 +167,7 @@ const Expenses = () => {
   };
 
   const handleDelete = async (id) => {
+    if (!navigator.onLine) return toast.error('Cannot delete while offline');
     if (window.confirm('Delete this expense?')) {
       try {
         await api.delete(`/expenses/${id}`);

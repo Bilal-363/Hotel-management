@@ -15,7 +15,14 @@ exports.createCustomer = async (req, res) => {
   try {
     const { name, phone, address, notes } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Name is required' });
-    const customer = await Customer.create({ name, phone, address, notes, createdBy: req.user?.id });
+    const customer = await Customer.create({
+      name,
+      phone,
+      address,
+      notes,
+      createdBy: req.user?.id,
+      owner: req.user.ownerId || req.user._id
+    });
     res.status(201).json({ success: true, customer });
   } catch (error) {
     console.error('createCustomer error:', error);
@@ -25,8 +32,14 @@ exports.createCustomer = async (req, res) => {
 
 exports.getCustomers = async (req, res) => {
   try {
-    const customers = await Customer.find().sort({ name: 1 }).lean();
-    const khatas = await Khata.find().sort({ createdAt: 1 }).lean();
+    let query = {};
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+
+    const customers = await Customer.find(query).sort({ name: 1 }).lean();
+    const khatas = await Khata.find(query).sort({ createdAt: 1 }).lean();
 
     console.log(`[DEBUG] Processing ${customers.length} customers and ${khatas.length} khatas`);
 
@@ -88,11 +101,16 @@ exports.createKhata = async (req, res) => {
     if (!customerId || !title || totalAmount == null) {
       return res.status(400).json({ success: false, message: 'customerId, title and totalAmount are required' });
     }
-    const customer = await Customer.findById(customerId);
+    const query = { _id: customerId };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const customer = await Customer.findOne(query);
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
 
     // Check if Khata already exists for this customer
-    const existingKhata = await Khata.findOne({ customer: customerId });
+    const existingKhata = await Khata.findOne({ customer: customerId, owner: req.user.ownerId || req.user._id });
     if (existingKhata) {
       return res.status(400).json({ success: false, message: 'A Khata account already exists for this customer' });
     }
@@ -102,7 +120,8 @@ exports.createKhata = async (req, res) => {
       title,
       totalAmount: parseAmount(totalAmount),
       remainingAmount: parseAmount(totalAmount),
-      createdBy: req.user?.id
+      createdBy: req.user?.id,
+      owner: req.user.ownerId || req.user._id
     });
 
     await KhataTransaction.create({
@@ -111,7 +130,8 @@ exports.createKhata = async (req, res) => {
       type: 'charge',
       amount: parseAmount(totalAmount),
       note: `Khata created: ${title}`,
-      createdBy: req.user?.id
+      createdBy: req.user?.id,
+      owner: req.user.ownerId || req.user._id
     });
 
     res.status(201).json({ success: true, khata });
@@ -123,7 +143,12 @@ exports.createKhata = async (req, res) => {
 
 exports.getKhatas = async (req, res) => {
   try {
-    const khatas = await Khata.find().populate('customer', 'name phone').lean();
+    let query = {};
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const khatas = await Khata.find(query).populate('customer', 'name phone').lean();
 
     // Calculate totals per customer to show in management view
     const customerTotals = {};
@@ -156,16 +181,22 @@ exports.getKhatas = async (req, res) => {
 
 exports.getKhata = async (req, res) => {
   try {
+    const query = { _id: req.params.id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+
     // [FIX] Added .lean() so we can attach the total balance to the response
-    const khata = await Khata.findById(req.params.id).populate('customer', 'name phone').lean();
+    const khata = await Khata.findOne(query).populate('customer', 'name phone').lean();
     if (!khata) return res.status(404).json({ success: false, message: 'Khata not found' });
 
     // [FIX] Calculate the Grand Total for this customer and attach it
-    const allKhatas = await Khata.find({ customer: khata.customer._id }).lean();
+    const allKhatas = await Khata.find({ customer: khata.customer._id, $or: [{ owner: khata.owner }, { owner: { $exists: false } }, { owner: null }] }).lean();
     const totalRemaining = allKhatas.reduce((sum, k) => sum + parseAmount(k.remainingAmount), 0);
     khata.customerTotalRemaining = totalRemaining;
 
-    const transactions = await KhataTransaction.find({ khata: khata._id }).sort({ createdAt: -1 });
+    const transactions = await KhataTransaction.find({ khata: khata._id, $or: [{ owner: khata.owner }, { owner: { $exists: false } }, { owner: null }] }).sort({ createdAt: -1 });
     res.status(200).json({ success: true, khata, transactions });
   } catch (error) {
     console.error('getKhata error:', error);
@@ -176,7 +207,12 @@ exports.getKhata = async (req, res) => {
 exports.addInstallments = async (req, res) => {
   try {
     const { installments } = req.body;
-    const khata = await Khata.findById(req.params.id);
+    const query = { _id: req.params.id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const khata = await Khata.findOne(query);
     if (!khata) return res.status(404).json({ success: false, message: 'Khata not found' });
     if (!Array.isArray(installments) || installments.length === 0) {
       return res.status(400).json({ success: false, message: 'Installments required' });
@@ -195,7 +231,12 @@ exports.addInstallments = async (req, res) => {
 exports.payInstallment = async (req, res) => {
   try {
     const { amount, note } = req.body;
-    const khata = await Khata.findOne({ 'installments._id': req.params.installmentId });
+    const query = { 'installments._id': req.params.installmentId };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const khata = await Khata.findOne(query);
     if (!khata) return res.status(404).json({ success: false, message: 'Installment not found' });
     const installment = khata.installments.id(req.params.installmentId);
     if (!installment) return res.status(404).json({ success: false, message: 'Installment not found' });
@@ -216,7 +257,8 @@ exports.payInstallment = async (req, res) => {
       type: 'payment',
       amount: payAmount,
       note: note || 'Installment payment',
-      createdBy: req.user?.id
+      createdBy: req.user?.id,
+      owner: req.user.ownerId || req.user._id
     });
 
     res.status(200).json({ success: true, khata, installment });
@@ -230,7 +272,12 @@ exports.updateKhata = async (req, res) => {
   try {
     const { id } = req.params;
     const { title, status } = req.body;
-    const khata = await Khata.findById(id);
+    const query = { _id: id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const khata = await Khata.findOne(query);
     if (!khata) return res.status(404).json({ success: false, message: 'Khata not found' });
     if (title != null) khata.title = title;
     if (status != null) khata.status = status;
@@ -245,7 +292,12 @@ exports.updateKhata = async (req, res) => {
 exports.deleteKhata = async (req, res) => {
   try {
     const { id } = req.params;
-    const khata = await Khata.findById(id);
+    const query = { _id: id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const khata = await Khata.findOne(query);
     if (!khata) return res.status(404).json({ success: false, message: 'Khata not found' });
     await KhataTransaction.deleteMany({ khata: id });
     await Khata.deleteOne({ _id: id });
@@ -260,7 +312,12 @@ exports.addCharge = async (req, res) => {
   try {
     const { id } = req.params;
     const { amount, note } = req.body;
-    const khata = await Khata.findById(id);
+    const query = { _id: id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const khata = await Khata.findOne(query);
     if (!khata) return res.status(404).json({ success: false, message: 'Khata not found' });
     const chargeAmount = parseAmount(amount);
     khata.totalAmount = parseAmount(khata.totalAmount) + chargeAmount;
@@ -272,7 +329,8 @@ exports.addCharge = async (req, res) => {
       type: 'charge',
       amount: chargeAmount,
       note: note || 'Additional charge',
-      createdBy: req.user?.id
+      createdBy: req.user?.id,
+      owner: req.user.ownerId || req.user._id
     });
     res.status(200).json({ success: true, khata });
   } catch (error) {
@@ -284,7 +342,12 @@ exports.addCharge = async (req, res) => {
 exports.getDueInstallments = async (req, res) => {
   try {
     const today = new Date();
-    const khatas = await Khata.find({ 'installments.status': { $in: ['due', 'partial'] } }).populate('customer', 'name phone');
+    const query = { 'installments.status': { $in: ['due', 'partial'] } };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const khatas = await Khata.find(query).populate('customer', 'name phone');
     const due = [];
     for (const k of khatas) {
       for (const ins of k.installments) {
@@ -312,10 +375,15 @@ exports.getDueInstallments = async (req, res) => {
 exports.getCustomerHistory = async (req, res) => {
   try {
     const { id } = req.params;
-    const customer = await Customer.findById(id);
+    const query = { _id: id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const customer = await Customer.findOne(query);
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
-    const khatas = await Khata.find({ customer: id }).sort({ createdAt: -1 });
-    const transactions = await KhataTransaction.find({ customer: id }).sort({ createdAt: -1 });
+    const khatas = await Khata.find({ customer: id, $or: [{ owner: customer.owner }, { owner: { $exists: false } }, { owner: null }] }).sort({ createdAt: -1 });
+    const transactions = await KhataTransaction.find({ customer: id, $or: [{ owner: customer.owner }, { owner: { $exists: false } }, { owner: null }] }).sort({ createdAt: -1 });
 
     const totalRemaining = khatas.reduce((sum, k) => sum + parseAmount(k.remainingAmount), 0);
     const totalCredit = khatas.reduce((sum, k) => sum + parseAmount(k.totalAmount), 0);
@@ -331,7 +399,12 @@ exports.updateCustomer = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, phone, address, notes } = req.body;
-    const customer = await Customer.findById(id);
+    const query = { _id: id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const customer = await Customer.findOne(query);
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
     if (name != null) customer.name = name;
     if (phone != null) customer.phone = phone;
@@ -348,7 +421,12 @@ exports.updateCustomer = async (req, res) => {
 exports.deleteCustomer = async (req, res) => {
   try {
     const { id } = req.params;
-    const customer = await Customer.findById(id);
+    const query = { _id: id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const customer = await Customer.findOne(query);
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
 
     // 1. Find all Khatas for this customer
@@ -375,7 +453,12 @@ exports.deleteCustomer = async (req, res) => {
 
 exports.deleteTransaction = async (req, res) => {
   try {
-    const transaction = await KhataTransaction.findById(req.params.id);
+    const query = { _id: req.params.id };
+    if (req.user.role !== 'superadmin') {
+      const ownerId = req.user.ownerId || req.user._id;
+      query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
+    }
+    const transaction = await KhataTransaction.findOne(query);
     if (!transaction) {
       return res.status(404).json({ success: false, message: 'Transaction not found' });
     }
