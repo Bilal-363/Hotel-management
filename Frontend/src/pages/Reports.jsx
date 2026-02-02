@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
-import { FaChartBar, FaRupeeSign, FaChartLine, FaWallet, FaCalculator, FaChartArea } from 'react-icons/fa';
+import { FaChartBar, FaRupeeSign, FaChartLine, FaWallet, FaCalculator, FaChartArea, FaBook } from 'react-icons/fa';
 import api from '../services/api';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
@@ -228,6 +228,39 @@ const Reports = () => {
           <FaChartArea /> Profit & Loss Trend
         </Typography>
         <SimpleLineChart data={report.graphData} />
+      </Paper>
+
+      {/* Khata Overview Section */}
+      <Paper sx={{ p: 3, mb: 3, borderLeft: '4px solid #8b5cf6' }}>
+        <Typography variant="h6" fontWeight={600} mb={2} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <FaBook /> Khata (Credit) Overview
+        </Typography>
+        <Grid container spacing={3}>
+          <Grid item xs={12} sm={4}>
+            <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 2 }}>
+              <Typography color="text.secondary" fontSize={13}>Total Market Credit (Receivable)</Typography>
+              <Typography variant="h5" fontWeight={700} color="error.main">
+                {formatPKR(report.totalKhataOutstanding || 0)}
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid item xs={12} sm={4}>
+            <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 2 }}>
+              <Typography color="text.secondary" fontSize={13}>Received (Selected Period)</Typography>
+              <Typography variant="h5" fontWeight={700} color="success.main">
+                {formatPKR(report.paymentSummary?.find(p => p._id === 'Khata')?.paid || 0)}
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid item xs={12} sm={4}>
+            <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 2 }}>
+              <Typography color="text.secondary" fontSize={13}>Credit Sales (Selected Period)</Typography>
+              <Typography variant="h5" fontWeight={700} color="primary.main">
+                {formatPKR(report.paymentSummary?.find(p => p._id === 'Khata')?.total || 0)}
+              </Typography>
+            </Box>
+          </Grid>
+        </Grid>
       </Paper>
 
       <Grid container spacing={3}>

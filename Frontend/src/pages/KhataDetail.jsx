@@ -9,6 +9,35 @@ import { exportToCSV, exportToXLSX, pagePrintStyle } from '../utils/exportUtils'
 
 const formatPKR = (amount) => `Rs. ${(amount || 0).toLocaleString('en-PK')}`;
 
+const calculateExpression = (val) => {
+  try {
+    if (!val) return { value: '', expression: null };
+    const strVal = val.toString();
+    if (!/[+\-*/]/.test(strVal)) return { value: strVal, expression: null };
+
+    const sanitized = strVal.replace(/[^0-9+\-*/.()]/g, '');
+    // eslint-disable-next-line no-new-func
+    const result = new Function('return ' + sanitized)();
+    return isFinite(result) ? { value: result.toString(), expression: sanitized } : { value: strVal, expression: null };
+  } catch {
+    return { value: val, expression: null };
+  }
+};
+
+const getBreakdown = (text) => {
+  if (!text) return null;
+  // Matches content inside parentheses that contains at least one operator
+  const match = text.match(/\(([\d\s+\-*/.]+)\)/);
+  if (match && /[+\-*/]/.test(match[1])) {
+    return match[1];
+  }
+  // Fallback: check if the entire string looks like a math expression (e.g. "100+200")
+  if (/[+\-*/]/.test(text) && /^[\d\s+\-*/.]+$/.test(text)) {
+    return text;
+  }
+  return null;
+};
+
 const KhataDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -96,13 +125,29 @@ const KhataDetail = () => {
   const handleCharge = async () => {
     if (!navigator.onLine) return toast.error('Cannot add charge while offline');
     try {
-      const amount = Number(chargeAmount || '0');
-      if (!amount || amount <= 0) { toast.error('Enter amount'); return; }
-      await addCharge(id, { amount, note: chargeNote });
-      toast.success('Charge added');
-      setChargeOpen(false);
-      setChargeAmount(''); setChargeNote('');
-      load();
+      // Split by + to create separate transactions
+      const amounts = chargeAmount.toString().split('+');
+      let addedCount = 0;
+
+      for (const part of amounts) {
+        if (!part.trim()) continue;
+        const { value } = calculateExpression(part);
+        const amount = Number(value || '0');
+        if (amount > 0) {
+          await addCharge(id, { amount, note: chargeNote });
+          addedCount++;
+        }
+      }
+
+      if (addedCount > 0) {
+        toast.success(`${addedCount} charge(s) added`);
+        setChargeOpen(false);
+        setChargeAmount(''); 
+        setChargeNote('');
+        load();
+      } else {
+        toast.error('Enter valid amount');
+      }
     } catch (e) {
       toast.error(e.response?.data?.message || 'Failed to add charge');
     }
@@ -246,6 +291,11 @@ const KhataDetail = () => {
                 <Grid item xs={12} md={6} sx={{ textAlign: 'right' }}>
                   <Typography variant="subtitle2" color="#64748b">FINANCIALS</Typography>
                   <Typography variant="h5" fontWeight={700} color="#3b82f6">{formatPKR(k.totalAmount)}</Typography>
+                  {getBreakdown(k.title) && (
+                    <Typography variant="caption" display="block" color="text.secondary" sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                      {getBreakdown(k.title)}
+                    </Typography>
+                  )}
                   <Typography variant="body2" color={k.remainingAmount > 0 ? '#ef4444' : '#22c55e'}>
                     Remaining: {formatPKR(k.remainingAmount)}
                   </Typography>
@@ -369,7 +419,14 @@ const KhataDetail = () => {
         <Dialog open={chargeOpen} onClose={() => setChargeOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { bgcolor: 'white', color: '#1e293b' } }}>
           <DialogTitle>Add Extra Charge</DialogTitle>
           <DialogContent>
-            <TextField label="Amount" type="number" fullWidth sx={{ mt: 2 }} value={chargeAmount} onChange={(e) => setChargeAmount(e.target.value)} />
+            <TextField 
+              label="Amount" 
+              type="text" 
+              fullWidth 
+              sx={{ mt: 2 }} 
+              value={chargeAmount} 
+              onChange={(e) => setChargeAmount(e.target.value)} 
+            />
             <TextField label="Item Name" fullWidth sx={{ mt: 2 }} value={chargeNote} onChange={(e) => setChargeNote(e.target.value)} />
           </DialogContent>
           <DialogActions>
@@ -431,7 +488,22 @@ const KhataDetail = () => {
             {installations.map((row, idx) => (
               <Box key={idx} sx={{ display: 'flex', gap: 2, mt: 2 }}>
                 <TextField label="Product Name" value={row.productName || ''} onChange={(e) => updateRow(idx, 'productName', e.target.value)} sx={{ flex: 2 }} />
-                <TextField label="Amount" type="number" value={row.amount} onChange={(e) => updateRow(idx, 'amount', e.target.value)} sx={{ flex: 1 }} />
+                <TextField 
+                  label="Amount" 
+                  type="text" 
+                  value={row.amount} 
+                  onChange={(e) => updateRow(idx, 'amount', e.target.value)} 
+                  onBlur={() => {
+                    const next = [...installations];
+                    const { value, expression } = calculateExpression(next[idx].amount);
+                    next[idx].amount = value;
+                    if (expression) {
+                      next[idx].productName = next[idx].productName ? `${next[idx].productName} (${expression})` : expression;
+                    }
+                    setInstallations(next);
+                  }}
+                  sx={{ flex: 1 }} 
+                />
                 <TextField label="Due Date" type="date" value={row.dueDate} onChange={(e) => updateRow(idx, 'dueDate', e.target.value)} InputLabelProps={{ shrink: true }} sx={{ flex: 1 }} />
               </Box>
             ))}
@@ -449,7 +521,19 @@ const KhataDetail = () => {
             <Typography variant="body2" color="#64748b" mb={2}>
               Recording payment for installment due on {selectedInstallment && new Date(selectedInstallment.dueDate).toLocaleDateString()}
             </Typography>
-            <TextField label="Amount" type="number" fullWidth sx={{ mt: 1 }} value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
+            <TextField 
+              label="Amount" 
+              type="text" 
+              fullWidth 
+              sx={{ mt: 1 }} 
+              value={payAmount} 
+              onChange={(e) => setPayAmount(e.target.value)} 
+              onBlur={() => {
+                const { value, expression } = calculateExpression(payAmount);
+                setPayAmount(value);
+                if (expression) setPayNote(prev => prev ? `${prev} (${expression})` : expression);
+              }}
+            />
             <TextField label="Note (Optional)" fullWidth sx={{ mt: 2 }} value={payNote} onChange={(e) => setPayNote(e.target.value)} />
           </DialogContent>
           <DialogActions>

@@ -10,6 +10,18 @@ import { useNavigate } from 'react-router-dom';
 const formatPKR = (amount) => `Rs. ${(amount || 0).toLocaleString()}`;
 const formatDate = (date) => new Date(date).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' });
 
+const calculateExpression = (val) => {
+  try {
+    if (!val) return '';
+    const sanitized = val.toString().replace(/[^0-9+\-*/.()]/g, '');
+    // eslint-disable-next-line no-new-func
+    const result = new Function('return ' + sanitized)();
+    return isFinite(result) ? result.toString() : val;
+  } catch {
+    return val;
+  }
+};
+
 const KhataCustomers = () => {
   const navigate = useNavigate();
   const [customers, setCustomers] = useState([]);
@@ -471,8 +483,24 @@ const KhataCustomers = () => {
             <Typography variant="subtitle2" color="#3b82f6" sx={{ mt: 3, mb: 1, fontWeight: 600 }}>Initial Khata (Optional)</Typography>
             <TextField label="Item Name / Title" fullWidth size="small" value={form.itemName || ''} onChange={(e) => setForm({ ...form, itemName: e.target.value })} placeholder="e.g. Mobile Phone" />
             <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
-              <TextField label="Total Amount" type="number" fullWidth size="small" value={form.totalAmount || ''} onChange={(e) => setForm({ ...form, totalAmount: e.target.value })} />
-              <TextField label="Paid (Advance)" type="number" fullWidth size="small" value={form.paidAmount || ''} onChange={(e) => setForm({ ...form, paidAmount: e.target.value })} />
+              <TextField 
+                label="Total Amount" 
+                type="text" 
+                fullWidth 
+                size="small" 
+                value={form.totalAmount || ''} 
+                onChange={(e) => setForm({ ...form, totalAmount: e.target.value })} 
+                onBlur={() => setForm({ ...form, totalAmount: calculateExpression(form.totalAmount) })}
+              />
+              <TextField 
+                label="Paid (Advance)" 
+                type="text" 
+                fullWidth 
+                size="small" 
+                value={form.paidAmount || ''} 
+                onChange={(e) => setForm({ ...form, paidAmount: e.target.value })} 
+                onBlur={() => setForm({ ...form, paidAmount: calculateExpression(form.paidAmount) })}
+              />
             </Box>
             {form.totalAmount && (
               <Box sx={{ mt: 2, p: 1.5, bgcolor: '#f1f5f9', borderRadius: 1, textAlign: 'right' }}>
@@ -551,7 +579,15 @@ const KhataCustomers = () => {
           <DialogTitle>Create Khata</DialogTitle>
           <DialogContent>
             <TextField label="Title" fullWidth sx={{ mt: 2 }} value={khataForm.title} onChange={(e) => setKhataForm({ ...khataForm, title: e.target.value })} />
-            <TextField label="Total Amount" type="number" fullWidth sx={{ mt: 2 }} value={khataForm.totalAmount} onChange={(e) => setKhataForm({ ...khataForm, totalAmount: e.target.value })} />
+            <TextField 
+              label="Total Amount" 
+              type="text" 
+              fullWidth 
+              sx={{ mt: 2 }} 
+              value={khataForm.totalAmount} 
+              onChange={(e) => setKhataForm({ ...khataForm, totalAmount: e.target.value })} 
+              onBlur={() => setKhataForm({ ...khataForm, totalAmount: calculateExpression(khataForm.totalAmount) })}
+            />
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setCreateKhataOpen(false)} sx={{ color: '#64748b' }}>Cancel</Button>
