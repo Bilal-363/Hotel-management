@@ -6,6 +6,7 @@ import { getCustomers, createCustomer, createKhata, getCustomerHistory, updateCu
 import { useReactToPrint } from 'react-to-print';
 import { exportToCSV, exportToXLSX, pagePrintStyle } from '../utils/exportUtils';
 import { useNavigate } from 'react-router-dom';
+import { addToQueue, processQueue } from '../services/offlineKhata';
 
 const formatPKR = (amount) => `Rs. ${(amount || 0).toLocaleString()}`;
 const formatDate = (date) => new Date(date).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' });
@@ -48,10 +49,14 @@ const KhataCustomers = () => {
   });
 
   useEffect(() => {
-    load();
+    const init = async () => {
+      if (navigator.onLine) await processQueue();
+      load();
+    };
+    init();
     const handleOnline = () => {
       toast.success('Back Online!');
-      load();
+      init();
     };
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
@@ -93,7 +98,38 @@ const KhataCustomers = () => {
   }, [customers, search]);
 
   const handleCreate = async () => {
-    if (!navigator.onLine) return toast.error('Cannot create while offline');
+    if (!navigator.onLine) {
+      // OFFLINE HANDLING
+      const tempId = `temp_c_${Date.now()}`;
+      const newCustomer = {
+        _id: tempId,
+        name: form.name,
+        phone: form.phone,
+        address: form.address,
+        khataBalance: 0,
+        khata: null
+      };
+
+      addToQueue({ type: 'create_customer', data: { name: form.name, phone: form.phone, address: form.address }, tempId });
+
+      if (form.totalAmount) {
+         const total = Number(calculateExpression(form.totalAmount)) || 0;
+         const paid = Number(calculateExpression(form.paidAmount)) || 0;
+         const remaining = total - paid;
+         
+         newCustomer.khataBalance = remaining;
+         addToQueue({ type: 'create_khata', customerId: tempId, data: { title: form.itemName || `${form.name}'s Khata`, totalAmount: total } });
+      }
+
+      setCustomers([...customers, newCustomer]);
+      
+      // Update Cache
+      localStorage.setItem('customers_cache', JSON.stringify([...customers, newCustomer]));
+      
+      toast.success('Saved offline (will sync when online)');
+      setCreateOpen(false);
+      return;
+    }
     try {
       if (!form.name) { toast.error('Name required'); return; }
 
@@ -166,7 +202,31 @@ const KhataCustomers = () => {
   };
 
   const handleCreateKhata = async () => {
-    if (!navigator.onLine) return toast.error('Cannot create while offline');
+    if (!navigator.onLine) {
+      const total = Number(calculateExpression(khataForm.totalAmount)) || 0;
+      if (!khataForm.title || total <= 0) return toast.error('Enter title and amount');
+
+      addToQueue({ 
+        type: 'create_khata', 
+        customerId: current._id, 
+        data: { title: khataForm.title, totalAmount: total } 
+      });
+
+      // Update local state and cache to reflect the new Khata (Optimistic)
+      const updatedCustomers = customers.map(c => 
+        c._id === current._id 
+          ? { ...c, khataBalance: (c.khataBalance || 0) + total } 
+          : c
+      );
+      setCustomers(updatedCustomers);
+      localStorage.setItem('customers_cache', JSON.stringify(updatedCustomers));
+
+      toast.success('Khata created offline');
+      setCreateKhataOpen(false);
+      setCurrent(null);
+      return;
+    }
+
     try {
       const expression = khataForm.totalAmount.toString();
       const parts = expression.split('+').map(p => {

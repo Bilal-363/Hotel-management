@@ -218,8 +218,8 @@ const KhataList = () => {
                 sx={{ bgcolor: '#10b981', '&:hover': { bgcolor: '#059669' } }}
                 startIcon={<FaFileExcel />}
                 onClick={() => {
-                  const columns = ['Title', 'Customer', 'Phone', 'Total', 'Remaining', 'Status'];
-                  const rows = filtered.map(k => [k.title, k.customer?.name || '', k.customer?.phone || '', k.totalAmount, k.remainingAmount, k.status]);
+                  const columns = ['Title', 'Customer', 'Phone', 'Address', 'Total', 'Remaining', 'Status'];
+                  const rows = filtered.map(k => [k.title, k.customer?.name || '', k.customer?.phone || '', k.customer?.address || '', k.totalAmount, k.remainingAmount, k.status]);
                   exportToXLSX('khatas', columns, rows);
                 }}
               >

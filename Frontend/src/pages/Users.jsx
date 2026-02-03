@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Box, Paper, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Chip, Button, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem } from '@mui/material';
-import { FaUsers, FaTrash, FaBan, FaCheckCircle, FaChartLine, FaSignInAlt, FaPlus, FaRecycle } from 'react-icons/fa';
+import { FaUsers, FaTrash, FaBan, FaCheckCircle, FaChartLine, FaSignInAlt, FaPlus, FaRecycle, FaFilePdf, FaFileExcel } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { useNavigate } from 'react-router-dom';
+import { useReactToPrint } from 'react-to-print';
+import { exportToXLSX, pagePrintStyle } from '../utils/exportUtils';
 
 const Users = () => {
   const [users, setUsers] = useState([]);
@@ -13,6 +15,12 @@ const Users = () => {
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState({ name: '', email: '', password: '', phone: '', role: 'staff' });
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'active', 'inactive'
+  const tableRef = useRef(null);
+
+  const handlePrint = useReactToPrint({
+    content: () => tableRef.current,
+    pageStyle: pagePrintStyle
+  });
 
   useEffect(() => {
     fetchUsers();
@@ -149,12 +157,20 @@ const Users = () => {
             <MenuItem value="inactive">Inactive</MenuItem>
           </TextField>
         </Box>
-        <Button variant="contained" startIcon={<FaPlus />} onClick={() => setOpen(true)}>
-          Add User
-        </Button>
+        <Box>
+          <Button variant="contained" color="error" startIcon={<FaFilePdf />} onClick={handlePrint} sx={{ mr: 1 }}>PDF</Button>
+          <Button variant="contained" color="success" startIcon={<FaFileExcel />} onClick={() => {
+              const columns = ['Name', 'Email', 'Role', 'Phone', 'Status', 'Last Login', 'Joined'];
+              const rows = filteredUsers.map(u => [u.name, u.email, u.role, u.phone, u.isActive ? 'Active' : 'Inactive', u.lastLogin ? new Date(u.lastLogin).toLocaleString() : 'Never', new Date(u.createdAt).toLocaleDateString()]);
+              exportToXLSX('users_list', columns, rows);
+          }} sx={{ mr: 1 }}>Excel</Button>
+          <Button variant="contained" startIcon={<FaPlus />} onClick={() => setOpen(true)}>
+            Add User
+          </Button>
+        </Box>
       </Box>
 
-      <Paper>
+      <Paper ref={tableRef}>
         <TableContainer>
           <Table>
             <TableHead>

@@ -10,6 +10,8 @@ exports.getDashboardStats = async (req, res) => {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
     // Filter: If Super Admin, see all. If Admin/Staff, see only owner's data.
@@ -63,6 +65,45 @@ exports.getDashboardStats = async (req, res) => {
       ])
     ]);
 
+    // --- AI FEATURE: Inventory Time Machine (Forecast) ---
+    // 1. Calculate Sales Velocity (Avg sold per day over last 30 days)
+    const salesVelocity = await Sale.aggregate([
+      { $match: { ...query, createdAt: { $gte: thirtyDaysAgo }, status: 'completed' } },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: '$items.product',
+          totalSold: { $sum: '$items.quantity' }
+        }
+      },
+      { $sort: { totalSold: -1 } }
+    ]);
+
+    // Filter out items with null _id (deleted products or data inconsistencies)
+    const validSalesVelocity = salesVelocity.filter(item => item._id);
+
+    const topSellingIds = validSalesVelocity.slice(0, 5).map(item => item._id);
+    
+    const topProductsList = await Product.find({ _id: { $in: topSellingIds } }).select('name stock size sellPrice');
+    const topSellingProducts = topSellingIds.map(id => topProductsList.find(p => p._id.toString() === id.toString())).filter(Boolean);
+
+    const velocityMap = {};
+    validSalesVelocity.forEach(item => {
+      velocityMap[item._id.toString()] = item.totalSold / 30; // Avg qty per day
+    });
+
+    // 2. Predict Days Remaining for all active products
+    const allProducts = await Product.find(productQuery).select('name stock size');
+    const inventoryForecast = allProducts.map(p => {
+      const dailyUsage = velocityMap[p._id.toString()] || 0;
+      if (dailyUsage <= 0) return null;
+      const daysLeft = p.stock / dailyUsage;
+      return { _id: p._id, name: p.name, size: p.size, stock: p.stock, dailyUsage, daysLeft };
+    }).filter(p => p && p.daysLeft < 21 && p.stock > 0) // Only show items running out in < 3 weeks
+      .sort((a, b) => a.daysLeft - b.daysLeft)
+      .slice(0, 5); // Top 5 urgent
+    // -----------------------------------------------------
+
     const totalTodaySales = todaySales.reduce((sum, sale) => sum + sale.total, 0);
     const totalProfit = todaySales.reduce((sum, sale) => sum + sale.totalProfit, 0);
     const totalTodayExpenses = todayExpenses.reduce((sum, exp) => sum + exp.amount, 0);
@@ -83,7 +124,10 @@ exports.getDashboardStats = async (req, res) => {
         potentialProfit: potentialProfit[0]?.total || 0,
         monthlyRevenue: monthlyRevenueAgg[0]?.total || 0,
         totalSales: totalSalesAgg[0]?.total || 0,
-        pendingPayments: pendingPaymentsAgg[0]?.total || 0
+        pendingPayments: pendingPaymentsAgg[0]?.total || 0,
+        inventoryForecast, // Added AI Forecast
+        topSellingIds, // Added Top Selling IDs (for POS badges)
+        topSellingProducts // Added Top Selling List (for Dashboard)
       }
     });
   } catch (error) {

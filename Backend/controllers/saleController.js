@@ -197,7 +197,8 @@ exports.createSale = async (req, res) => {
             amount: chargeAmount,
             type: 'charge',
             note: `POS Sale Invoice #${finalInvoiceNumber}`,
-            createdBy: req.user ? req.user._id : null
+            createdBy: req.user ? req.user._id : null,
+            owner: req.user.ownerId || req.user._id
           });
         }
 
@@ -211,7 +212,8 @@ exports.createSale = async (req, res) => {
             amount: paymentAmount,
             type: 'payment',
             note: `Down Payment for Invoice #${finalInvoiceNumber}`,
-            createdBy: req.user ? req.user._id : null
+            createdBy: req.user ? req.user._id : null,
+            owner: req.user.ownerId || req.user._id
           });
         }
 

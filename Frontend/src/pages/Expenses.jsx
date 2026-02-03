@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Box, Paper, Typography, Button, TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem, Chip, Checkbox } from '@mui/material';
-import { FaPlus, FaEdit, FaTrash, FaWallet, FaTags } from 'react-icons/fa';
+import { FaPlus, FaEdit, FaTrash, FaWallet, FaTags, FaFilePdf, FaFileExcel } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import api from '../services/api';
+import { useReactToPrint } from 'react-to-print';
+import { exportToCSV, exportToXLSX, pagePrintStyle } from '../utils/exportUtils';
 
 const Expenses = () => {
   const [expenses, setExpenses] = useState([]);
@@ -13,6 +15,12 @@ const Expenses = () => {
   const [editId, setEditId] = useState(null);
   const [formData, setFormData] = useState({ category: '', description: '', amount: '' });
   const [categoryFormData, setCategoryFormData] = useState({ name: '', icon: '💰' });
+  const tableRef = useRef(null);
+
+  const handlePrint = useReactToPrint({
+    content: () => tableRef.current,
+    pageStyle: pagePrintStyle
+  });
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
@@ -195,6 +203,17 @@ const Expenses = () => {
             <Typography fontWeight={700} color="error">{formatPKR(totalExpenses)}</Typography>
           </Box>
           <Button variant="outlined" startIcon={<FaTags />} onClick={openCategoryModal}>Add Category</Button>
+          <Button variant="contained" color="error" startIcon={<FaFilePdf />} onClick={handlePrint}>PDF</Button>
+          <Button variant="contained" color="success" startIcon={<FaFileExcel />} onClick={() => {
+             const columns = ['Date', 'Category', 'Description', 'Amount'];
+             const rows = expenses.map(e => [
+               new Date(e.createdAt).toLocaleDateString(),
+               e.category,
+               e.description,
+               e.amount
+             ]);
+             exportToXLSX('expenses', columns, rows);
+          }}>Excel</Button>
           <Button variant="contained" startIcon={<FaPlus />} onClick={() => openModal()}>Add Expense</Button>
         </Box>
       </Box>
@@ -228,7 +247,7 @@ const Expenses = () => {
         </Paper>
       )}
 
-      <Paper>
+      <Paper ref={tableRef}>
         <TableContainer>
           <Table>
             <TableHead>

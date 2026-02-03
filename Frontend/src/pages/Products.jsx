@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { Box, Paper, Typography, Button, TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem, Chip, Checkbox, Toolbar, TablePagination } from '@mui/material';
-import { FaPlus, FaEdit, FaTrash, FaBoxes, FaTags, FaFileExcel, FaFileImport } from 'react-icons/fa';
+import { FaPlus, FaEdit, FaTrash, FaBoxes, FaTags, FaFileExcel, FaFileImport, FaFilePdf } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import api from '../services/api';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, resetDatabase } from '../db';
+import { useReactToPrint } from 'react-to-print';
+import { pagePrintStyle } from '../utils/exportUtils';
 
 const Products = () => {
   // const [products, setProducts] = useState([]); // Removed local state in favor of LiveQuery
@@ -21,6 +23,12 @@ const Products = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const fileInputRef = useRef(null);
+  const tableRef = useRef(null);
+
+  const handlePrint = useReactToPrint({
+    content: () => tableRef.current,
+    pageStyle: pagePrintStyle
+  });
 
   // Select All State
   const [selectedProducts, setSelectedProducts] = useState([]);
@@ -328,6 +336,7 @@ const Products = () => {
           {isAdmin && <>
             <Button variant="outlined" startIcon={<FaFileImport />} onClick={handleImportClick} color="success">Import Excel</Button>
             <Button variant="outlined" startIcon={<FaFileExcel />} onClick={handleExport} color="success">Export Excel</Button>
+            <Button variant="outlined" startIcon={<FaFilePdf />} onClick={handlePrint} color="error">PDF</Button>
             <Button variant="outlined" startIcon={<FaTags />} onClick={openCategoryModal}>Add Category</Button>
             <Button variant="contained" startIcon={<FaPlus />} onClick={() => openModal()}>Add Product</Button>
           </>}
@@ -363,7 +372,7 @@ const Products = () => {
         </Paper>
       )}
 
-      <Paper>
+      <Paper ref={tableRef}>
         <TableContainer>
           <Table>
             <TableHead>

@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Box, Paper, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Checkbox } from '@mui/material';
-import { FaReceipt, FaEye, FaCalendar, FaTrash, FaWhatsapp } from 'react-icons/fa';
+import { FaReceipt, FaEye, FaCalendar, FaTrash, FaWhatsapp, FaFilePdf, FaFileExcel } from 'react-icons/fa';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, resetDatabase } from '../db';
+import { useReactToPrint } from 'react-to-print';
+import { exportToCSV, exportToXLSX, pagePrintStyle } from '../utils/exportUtils';
 
 const Sales = () => {
   // const [sales, setSales] = useState([]); // Removed local state
@@ -17,6 +19,12 @@ const Sales = () => {
   // Bulk Selection State
   const [selectedSales, setSelectedSales] = useState([]);
   const [selectAll, setSelectAll] = useState(false);
+  const tableRef = useRef(null);
+
+  const handlePrint = useReactToPrint({
+    content: () => tableRef.current,
+    pageStyle: pagePrintStyle
+  });
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const isAdmin = user.role === 'admin';
@@ -204,6 +212,19 @@ const Sales = () => {
           <TextField type="date" size="small" label="Start Date" InputLabelProps={{ shrink: true }} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           <TextField type="date" size="small" label="End Date" InputLabelProps={{ shrink: true }} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           <Button variant="contained" onClick={fetchSales}>Filter</Button>
+          <Button variant="contained" color="error" startIcon={<FaFilePdf />} onClick={handlePrint}>PDF</Button>
+          <Button variant="contained" color="success" startIcon={<FaFileExcel />} onClick={() => {
+             const columns = ['Invoice', 'Date', 'Customer', 'Items', 'Total', 'Payment Method'];
+             const rows = sales.map(s => [
+               s.invoiceNumber,
+               new Date(s.createdAt).toLocaleDateString(),
+               s.customerName,
+               s.items.map(i => `${i.productName} (${i.quantity})`).join(', '),
+               s.total,
+               s.paymentMethod
+             ]);
+             exportToXLSX('sales_history', columns, rows);
+          }}>Excel</Button>
           <Box sx={{ ml: 'auto', display: 'flex', gap: 3 }}>
             <Box><Typography variant="body2" color="text.secondary">Total Sales</Typography><Typography fontWeight={700} color="primary">{formatPKR(totalSales)}</Typography></Box>
             {isAdmin && <Box><Typography variant="body2" color="text.secondary">Total Profit</Typography><Typography fontWeight={700} color="success.main">{formatPKR(totalProfit)}</Typography></Box>}
@@ -230,7 +251,7 @@ const Sales = () => {
         )
       }
 
-      <Paper>
+      <Paper ref={tableRef}>
         <TableContainer>
           <Table>
             <TableHead>

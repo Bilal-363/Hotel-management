@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Box, Grid, Paper, Typography, TextField, Button, IconButton, Chip, Dialog, DialogTitle, DialogContent, DialogActions, Autocomplete } from '@mui/material';
-import { FaPlus, FaMinus, FaTrash, FaShoppingCart, FaMoneyBillWave, FaMobileAlt, FaCreditCard, FaPrint, FaBook, FaSync, FaWhatsapp } from 'react-icons/fa';
+import { FaPlus, FaMinus, FaTrash, FaShoppingCart, FaMoneyBillWave, FaMobileAlt, FaCreditCard, FaPrint, FaBook, FaSync, FaWhatsapp, FaFire } from 'react-icons/fa';
 import api from '../services/api';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, resetDatabase } from '../db';
@@ -19,6 +19,7 @@ const POS = () => {
   const [receiptModal, setReceiptModal] = useState(false);
   const [lastSale, setLastSale] = useState(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [topSellingIds, setTopSellingIds] = useState([]);
 
   // Khata States
   const [selectedKhata, setSelectedKhata] = useState(null); // Customer's Khata ID
@@ -96,6 +97,7 @@ const POS = () => {
   useEffect(() => {
     fetchProducts();
     loadKhatas();
+    fetchTrending();
   }, []);
 
   useEffect(() => {
@@ -149,6 +151,7 @@ const POS = () => {
         await syncSales();
         fetchProducts();
         loadKhatas();
+        fetchTrending();
       }
     };
     window.addEventListener('online', handleStatus);
@@ -286,6 +289,24 @@ const POS = () => {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTrending = async () => {
+    try {
+      if (navigator.onLine) {
+        const res = await api.get('/dashboard/stats');
+        const ids = res.data.stats?.topSellingIds || [];
+        setTopSellingIds(ids);
+        // Update cache for offline use
+        const cached = JSON.parse(localStorage.getItem('dashboard_stats_cache') || '{}');
+        localStorage.setItem('dashboard_stats_cache', JSON.stringify({ ...cached, topSellingIds: ids }));
+      } else {
+        const cached = JSON.parse(localStorage.getItem('dashboard_stats_cache') || '{}');
+        setTopSellingIds(cached.topSellingIds || []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch trending", e);
     }
   };
 
@@ -739,7 +760,26 @@ const POS = () => {
 
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 2, maxHeight: '60vh', overflowY: 'auto' }}>
               {filteredProducts.map(product => (
-                <Paper key={product._id} onClick={() => addToCart(product)} sx={{ p: 2, textAlign: 'center', cursor: 'pointer', border: product.stock <= product.minStock ? '2px solid #f59e0b' : '2px solid transparent', '&:hover': { borderColor: '#2563eb' } }}>
+                <Paper key={product._id} onClick={() => addToCart(product)} sx={{ position: 'relative', p: 2, textAlign: 'center', cursor: 'pointer', border: product.stock <= product.minStock ? '2px solid #f59e0b' : '2px solid transparent', '&:hover': { borderColor: '#2563eb' } }}>
+                  {topSellingIds.includes(product._id) && (
+                    <Chip
+                      label="Trending"
+                      size="small"
+                      icon={<FaFire style={{ color: '#d97706' }} />}
+                      sx={{
+                        position: 'absolute',
+                        top: 4,
+                        right: 4,
+                        height: 20,
+                        fontSize: '0.65rem',
+                        bgcolor: '#fff7ed',
+                        color: '#d97706',
+                        border: '1px solid #fdba74',
+                        '& .MuiChip-icon': { fontSize: 10, ml: 0.5 },
+                        zIndex: 1
+                      }}
+                    />
+                  )}
                   <Typography fontWeight={600} fontSize={14}>{product.name}</Typography>
                   <Typography color="text.secondary" fontSize={12}>{product.size}</Typography>
                   <Typography color="primary" fontWeight={700} fontSize={18} mt={1}>{formatPKR(product.sellPrice)}</Typography>

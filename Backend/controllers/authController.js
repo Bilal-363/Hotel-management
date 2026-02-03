@@ -660,3 +660,44 @@ exports.resetTargetUserData = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+exports.restoreBackup = async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data || !data.timestamp) {
+      return res.status(400).json({ success: false, message: 'Invalid backup file format' });
+    }
+
+    const ownerId = req.user.ownerId || req.user._id;
+    const isSuperAdmin = req.user.role === 'superadmin';
+
+    const restoreCollection = async (Model, items) => {
+      if (!items || !Array.isArray(items)) return;
+      for (const item of items) {
+        if (!isSuperAdmin) item.owner = ownerId;
+        if (item._id) {
+          await Model.findByIdAndUpdate(item._id, item, { upsert: true });
+        } else {
+          await Model.create(item);
+        }
+      }
+    };
+
+    await restoreCollection(Product, data.products);
+    await restoreCollection(Sale, data.sales);
+    await restoreCollection(Expense, data.expenses);
+    await restoreCollection(Customer, data.customers);
+    await restoreCollection(Khata, data.khatas);
+    await restoreCollection(KhataTransaction, data.khataTransactions);
+    await restoreCollection(Supplier, data.suppliers);
+    await restoreCollection(Purchase, data.purchases);
+    await restoreCollection(DailyLog, data.dailyLogs);
+    await restoreCollection(Category, data.categories);
+    await restoreCollection(Setting, data.settings);
+
+    res.status(200).json({ success: true, message: 'Restore completed successfully' });
+  } catch (error) {
+    console.error('Restore error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

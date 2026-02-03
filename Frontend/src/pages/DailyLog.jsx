@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Box, Paper, Typography, TextField, Button, Grid, List, ListItemButton, IconButton, InputAdornment } from '@mui/material';
-import { FaCalendar, FaSave, FaHistory, FaTrash, FaSearch } from 'react-icons/fa';
+import { FaCalendar, FaSave, FaHistory, FaTrash, FaSearch, FaFilePdf, FaFileExcel } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, resetDatabase } from '../db';
+import { useReactToPrint } from 'react-to-print';
+import { exportToXLSX, pagePrintStyle } from '../utils/exportUtils';
 
 const DailyLog = () => {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -12,6 +14,12 @@ const DailyLog = () => {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const printRef = useRef();
+
+  const handlePrint = useReactToPrint({
+    content: () => printRef.current,
+    pageStyle: pagePrintStyle
+  });
 
   // 1. Read directly from Local Database (Instant load)
   const logs = useLiveQuery(() => db.dailylogs.orderBy('date').reverse().toArray()) || [];
@@ -189,12 +197,20 @@ const DailyLog = () => {
           <FaCalendar /> Daily Diary
           {!isOnline && <Typography variant="caption" sx={{ bgcolor: 'error.main', color: 'white', px: 1, borderRadius: 1 }}>OFFLINE MODE</Typography>}
         </Typography>
-        <Button 
-          variant="outlined" 
-          onClick={() => setDate(new Date().toISOString().split('T')[0])}
-        >
-          Jump to Today
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button variant="contained" color="error" startIcon={<FaFilePdf />} onClick={handlePrint}>PDF</Button>
+          <Button variant="contained" color="success" startIcon={<FaFileExcel />} onClick={() => {
+              const columns = ['Date', 'Note'];
+              const rows = filteredLogs.map(l => [new Date(l.date).toLocaleDateString('en-PK'), l.note]);
+              exportToXLSX('daily_logs', columns, rows);
+          }}>Excel</Button>
+          <Button 
+            variant="outlined" 
+            onClick={() => setDate(new Date().toISOString().split('T')[0])}
+          >
+            Jump to Today
+          </Button>
+        </Box>
       </Box>
 
       <Grid container spacing={3}>
@@ -318,6 +334,21 @@ const DailyLog = () => {
           </Paper>
         </Grid>
       </Grid>
+
+      {/* Hidden Print Section */}
+      <Box sx={{ display: 'none' }}>
+        <Box ref={printRef} sx={{ p: 4 }}>
+          <Typography variant="h4" align="center" fontWeight={700} mb={3}>Daily Diary Logs</Typography>
+          {filteredLogs.map((log) => (
+            <Box key={log.id} sx={{ mb: 3, pb: 2, borderBottom: '1px solid #eee' }}>
+              <Typography fontWeight={700} color="primary">
+                {new Date(log.date).toLocaleDateString('en-PK', { dateStyle: 'full' })}
+              </Typography>
+              <Typography style={{ whiteSpace: 'pre-wrap' }}>{log.note}</Typography>
+            </Box>
+          ))}
+        </Box>
+      </Box>
     </Box>
   );
 };

@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Box, Paper, Typography, Button, TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Tooltip } from '@mui/material';
-import { FaPlus, FaEdit, FaTrash, FaTruck, FaMoneyBillWave, FaWhatsapp } from 'react-icons/fa';
+import { FaPlus, FaEdit, FaTrash, FaTruck, FaMoneyBillWave, FaWhatsapp, FaFilePdf, FaFileExcel } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import api from '../services/api';
+import { useReactToPrint } from 'react-to-print';
+import { exportToCSV, exportToXLSX, pagePrintStyle } from '../utils/exportUtils';
 
 const Suppliers = () => {
   const [suppliers, setSuppliers] = useState([]);
@@ -12,6 +14,12 @@ const Suppliers = () => {
   
   const [payModal, setPayModal] = useState(false);
   const [payAmount, setPayAmount] = useState('');
+  const tableRef = useRef(null);
+
+  const handlePrint = useReactToPrint({
+    content: () => tableRef.current,
+    pageStyle: pagePrintStyle
+  });
 
   useEffect(() => {
     fetchSuppliers();
@@ -126,10 +134,18 @@ const Suppliers = () => {
         <Typography variant="h4" fontWeight={700} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <FaTruck /> Suppliers
         </Typography>
-        <Button variant="contained" startIcon={<FaPlus />} onClick={() => openModal()}>Add Supplier</Button>
+        <Box>
+          <Button variant="contained" color="error" startIcon={<FaFilePdf />} onClick={handlePrint} sx={{ mr: 1 }}>PDF</Button>
+          <Button variant="contained" color="success" startIcon={<FaFileExcel />} onClick={() => {
+             const columns = ['Name', 'Phone', 'Address', 'Balance'];
+             const rows = suppliers.map(s => [s.name, s.phone, s.address, s.balance]);
+             exportToXLSX('suppliers', columns, rows);
+          }} sx={{ mr: 1 }}>Excel</Button>
+          <Button variant="contained" startIcon={<FaPlus />} onClick={() => openModal()}>Add Supplier</Button>
+        </Box>
       </Box>
 
-      <Paper>
+      <Paper ref={tableRef}>
         <TableContainer>
           <Table>
             <TableHead>

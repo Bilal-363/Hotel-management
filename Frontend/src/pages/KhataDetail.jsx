@@ -88,7 +88,7 @@ const KhataDetail = () => {
   };
 
   const handleShareTransaction = (tx) => {
-    const customer = k.customer;
+    const customer = data.khata?.customer;
     if (!customer?.phone) return toast.error('No phone number');
     
     let cleanPhone = customer.phone.replace(/\D/g, '');
@@ -108,7 +108,7 @@ const KhataDetail = () => {
       
     if (tx.note) message += `Note: ${tx.note}\n`;
     
-    message += `\n*Current Balance:* ${formatPKR(k.remainingAmount)}\n\nThank you!`;
+    message += `\n*Current Balance:* ${formatPKR(data.khata?.remainingAmount)}\n\nThank you!`;
 
     const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
@@ -150,7 +150,35 @@ const KhataDetail = () => {
   };
 
   const handleCharge = async () => {
-    if (!navigator.onLine) return toast.error('Cannot add charge while offline');
+    if (!navigator.onLine) {
+      const amounts = chargeAmount.toString().split('+');
+      let addedCount = 0;
+      const newTxns = [];
+      let totalAdded = 0;
+
+      for (const part of amounts) {
+        if (!part.trim()) continue;
+        const { value } = calculateExpression(part);
+        const amount = Number(value || '0');
+        if (amount > 0) {
+          addToQueue({ type: 'add_charge', khataId: id, data: { amount, note: chargeNote } });
+          newTxns.push({ _id: `temp_${Date.now()}_${addedCount}`, type: 'charge', amount, note: chargeNote, createdAt: new Date().toISOString() });
+          totalAdded += amount;
+          addedCount++;
+        }
+      }
+
+      if (addedCount > 0) {
+        const updatedKhata = { ...data.khata, totalAmount: data.khata.totalAmount + totalAdded, remainingAmount: data.khata.remainingAmount + totalAdded };
+        const updatedTxns = [...newTxns, ...data.transactions];
+        setData({ khata: updatedKhata, transactions: updatedTxns });
+        localStorage.setItem(`khata_detail_${id}`, JSON.stringify({ khata: updatedKhata, transactions: updatedTxns }));
+        
+        toast.success('Charge added offline');
+        setChargeOpen(false); setChargeAmount(''); setChargeNote('');
+      }
+      return;
+    }
     try {
       // Split by + to create separate transactions
       const amounts = chargeAmount.toString().split('+');
@@ -187,7 +215,22 @@ const KhataDetail = () => {
     setInstallations(next);
   };
   const handleInstallments = async () => {
-    if (!navigator.onLine) return toast.error('Cannot add installments while offline');
+    if (!navigator.onLine) {
+      const payload = installations.map(i => ({ amount: Number(i.amount || '0'), dueDate: i.dueDate, productName: i.productName }));
+      if (payload.some(p => !p.amount || !p.dueDate)) return toast.error('Fill amount and due date');
+      
+      addToQueue({ type: 'add_installments', khataId: id, data: payload });
+      
+      // Optimistic Update
+      const newInstallments = payload.map((p, i) => ({ ...p, _id: `temp_inst_${Date.now()}_${i}`, status: 'pending', paidAmount: 0 }));
+      const updatedKhata = { ...data.khata, installments: [...(data.khata.installments || []), ...newInstallments] };
+      setData({ ...data, khata: updatedKhata });
+      localStorage.setItem(`khata_detail_${id}`, JSON.stringify({ ...data, khata: updatedKhata }));
+
+      toast.success('Installments added offline');
+      setInstallOpen(false); setInstallations([{ amount: '', dueDate: '', productName: '' }]);
+      return;
+    }
     try {
       const payload = installations.map(i => ({ amount: Number(i.amount || '0'), dueDate: i.dueDate, productName: i.productName }));
       if (payload.some(p => !p.amount || !p.dueDate)) { toast.error('Fill amount and due date'); return; }
@@ -208,7 +251,24 @@ const KhataDetail = () => {
   };
 
   const handlePay = async () => {
-    if (!navigator.onLine) return toast.error('Cannot pay while offline');
+    if (!navigator.onLine) {
+      const amount = Number(payAmount || '0');
+      if (!amount || amount <= 0) return toast.error('Invalid amount');
+
+      addToQueue({ type: 'pay_installment', installmentId: selectedInstallment._id, data: { amount, note: payNote } });
+
+      // Optimistic UI Update
+      const updatedKhata = { ...data.khata, remainingAmount: Math.max(0, data.khata.remainingAmount - amount) };
+      const newTx = { _id: `temp_${Date.now()}`, type: 'payment', amount, note: payNote, createdAt: new Date().toISOString() };
+      const updatedTxns = [newTx, ...data.transactions];
+      
+      setData({ khata: updatedKhata, transactions: updatedTxns });
+      localStorage.setItem(`khata_detail_${id}`, JSON.stringify({ khata: updatedKhata, transactions: updatedTxns }));
+
+      toast.success('Payment recorded offline');
+      setPayOpen(false);
+      return;
+    }
     const amount = Number(payAmount || '0');
     if (!amount || amount <= 0) { toast.error('Invalid amount'); return; }
     try {

@@ -1,10 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Box, Paper, Typography, Button, TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, MenuItem, Grid, IconButton, Autocomplete } from '@mui/material';
-import { FaShoppingCart, FaPlus, FaTrash, FaSave } from 'react-icons/fa';
+import { FaShoppingCart, FaPlus, FaTrash, FaSave, FaFilePdf, FaFileExcel } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import api from '../services/api';
+import { useReactToPrint } from 'react-to-print';
+import { exportToXLSX, pagePrintStyle } from '../utils/exportUtils';
 
 const Purchases = () => {
+  const location = useLocation();
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const [purchases, setPurchases] = useState([]);
@@ -21,6 +25,12 @@ const Purchases = () => {
   const [qty, setQty] = useState('');
   const [cost, setCost] = useState('');
   const [filterSupplier, setFilterSupplier] = useState('All');
+  const tableRef = useRef(null);
+
+  const handlePrint = useReactToPrint({
+    content: () => tableRef.current,
+    pageStyle: pagePrintStyle
+  });
 
   useEffect(() => {
     fetchData();
@@ -31,6 +41,21 @@ const Purchases = () => {
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
   }, []);
+
+  // Auto-select product if navigating from Dashboard "Restock"
+  useEffect(() => {
+    if (location.state?.restockProduct && products.length > 0) {
+      const target = products.find(p => p._id === location.state.restockProduct._id);
+      if (target) setSelectedProduct(target);
+    }
+  }, [products, location.state]);
+
+  // Auto-fill cost price when product is selected
+  useEffect(() => {
+    if (selectedProduct) {
+      setCost(selectedProduct.buyPrice || '');
+    }
+  }, [selectedProduct]);
 
   const fetchData = async () => {
     if (!navigator.onLine) {
@@ -203,21 +228,36 @@ const Purchases = () => {
         {/* Recent Purchases List */}
         <Grid item xs={12} lg={7}>
           <Paper sx={{ p: 3 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
               <Typography variant="h6" fontWeight={600}>Recent Purchases</Typography>
-              <TextField
-                select
-                size="small"
-                label="Filter Supplier"
-                value={filterSupplier}
-                onChange={(e) => setFilterSupplier(e.target.value)}
-                sx={{ width: 180 }}
-              >
-                <MenuItem value="All">All Suppliers</MenuItem>
-                {suppliers.map(s => <MenuItem key={s._id} value={s._id}>{s.name}</MenuItem>)}
-              </TextField>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button variant="outlined" color="error" size="small" startIcon={<FaFilePdf />} onClick={handlePrint}>PDF</Button>
+                <Button variant="outlined" color="success" size="small" startIcon={<FaFileExcel />} onClick={() => {
+                   const filtered = purchases.filter(p => filterSupplier === 'All' || p.supplier?._id === filterSupplier);
+                   const columns = ['Date', 'Supplier', 'Items', 'Total', 'Paid'];
+                   const rows = filtered.map(p => [
+                     new Date(p.date).toLocaleDateString(),
+                     p.supplier?.name,
+                     p.items?.map(i => `${i.productName} (${i.quantity})`).join(', '),
+                     p.totalAmount,
+                     p.paidAmount
+                   ]);
+                   exportToXLSX('purchases', columns, rows);
+                }}>Excel</Button>
+                <TextField
+                  select
+                  size="small"
+                  label="Filter Supplier"
+                  value={filterSupplier}
+                  onChange={(e) => setFilterSupplier(e.target.value)}
+                  sx={{ width: 150 }}
+                >
+                  <MenuItem value="All">All Suppliers</MenuItem>
+                  {suppliers.map(s => <MenuItem key={s._id} value={s._id}>{s.name}</MenuItem>)}
+                </TextField>
+              </Box>
             </Box>
-            <TableContainer>
+            <TableContainer ref={tableRef}>
               <Table size="small">
                 <TableHead>
                   <TableRow>

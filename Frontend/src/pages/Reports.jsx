@@ -1,10 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
-import { FaChartBar, FaRupeeSign, FaChartLine, FaWallet, FaCalculator, FaChartArea, FaBook } from 'react-icons/fa';
+import { FaChartBar, FaRupeeSign, FaChartLine, FaWallet, FaCalculator, FaChartArea, FaBook, FaFilePdf, FaFileExcel, FaClock } from 'react-icons/fa';
 import api from '../services/api';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import toast from 'react-hot-toast';
+import { useReactToPrint } from 'react-to-print';
+import { pagePrintStyle, exportToXLSX } from '../utils/exportUtils';
 
 const StatCard = ({ icon, label, value, color }) => (
   <Paper sx={{ p: 3, borderLeft: `4px solid ${color}` }}>
@@ -20,11 +22,26 @@ const StatCard = ({ icon, label, value, color }) => (
   </Paper>
 );
 
+const evaluateQuantity = (qty) => {
+  if (typeof qty === 'string' && qty.includes('/')) {
+    const [n, d] = qty.split('/');
+    if (!d || Number(d) === 0) return 0;
+    return Number(n) / Number(d);
+  }
+  return parseFloat(qty) || 0;
+};
+
 const Reports = () => {
   const [report, setReport] = useState({});
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const reportRef = useRef(null);
+  const handlePrint = useReactToPrint({
+    content: () => reportRef.current,
+    pageStyle: pagePrintStyle
+  });
 
   const [products, setProducts] = useState([]);
   const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -54,7 +71,7 @@ const Reports = () => {
     allSales.forEach(sale => {
       const saleDate = new Date(sale.createdAt);
       
-      sale.items.forEach(item => {
+      (sale.items || []).forEach(item => {
         // Handle different ID fields (server vs local)
         const pId = item.product || item.productId || item._id;
         if (!pId) return;
@@ -62,7 +79,7 @@ const Reports = () => {
         if (!stats[pId]) stats[pId] = { day: 0, week: 0, month: 0, year: 0 };
         
         // Ensure quantity is treated as a number (handles fractions)
-        const qty = Number(item.quantity) || 0;
+        const qty = evaluateQuantity(item.quantity);
 
         if (saleDate >= todayStart) stats[pId].day += qty;
         if (saleDate >= weekStart) stats[pId].week += qty;
@@ -71,6 +88,21 @@ const Reports = () => {
       });
     });
     return stats;
+  }, [allSales]);
+
+  // Calculate Peak Hours
+  const peakHoursData = useMemo(() => {
+    const counts = Array(24).fill(0);
+    allSales.forEach(sale => {
+      const h = new Date(sale.createdAt).getHours();
+      counts[h]++;
+    });
+    const max = Math.max(...counts, 1);
+    return counts.map((count, hour) => ({
+      hourLabel: new Date(0, 0, 0, hour).toLocaleTimeString('en-PK', { hour: 'numeric', hour12: true }),
+      count,
+      height: (count / max) * 100
+    })).filter(d => d.count > 0); // Only show active hours
   }, [allSales]);
 
   const fetchReport = async () => {
@@ -146,7 +178,7 @@ const Reports = () => {
     const width = 600; // Viewbox width
     const padding = 20;
     
-    const maxVal = Math.max(...data.map(d => Math.max(d.sales, d.profit, d.expense)), 100);
+    const maxVal = Math.max(...data.map(d => Math.max(d.sales || 0, d.profit || 0, d.expense || 0)), 100);
     const minVal = 0;
     
     const getX = (index) => padding + (index * (width - 2 * padding)) / (data.length - 1 || 1);
@@ -204,9 +236,30 @@ const Reports = () => {
           <TextField type="date" size="small" label="Start Date" InputLabelProps={{ shrink: true }} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           <TextField type="date" size="small" label="End Date" InputLabelProps={{ shrink: true }} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           <Button variant="contained" onClick={fetchReport}>Generate Report</Button>
+          <Box sx={{ ml: 'auto', display: 'flex', gap: 1 }}>
+            <Button variant="contained" color="error" startIcon={<FaFilePdf />} onClick={handlePrint}>PDF</Button>
+            <Button variant="contained" color="success" startIcon={<FaFileExcel />} onClick={() => {
+               const columns = ['Product Name', 'Stock', 'Sold (Today)', 'Sold (Week)', 'Sold (Month)', 'Sold (Year)', 'Cost Value', 'Sell Value'];
+               const rows = products.map(p => {
+                 const perf = productPerformance[p._id] || { day: 0, week: 0, month: 0, year: 0 };
+                 return [
+                   p.name,
+                   p.stock,
+                   perf.day,
+                   perf.week,
+                   perf.month,
+                   perf.year,
+                   p.stock * p.buyPrice,
+                   p.stock * p.sellPrice
+                 ];
+               });
+               exportToXLSX('inventory_performance_report', columns, rows);
+            }}>Excel</Button>
+          </Box>
         </Box>
       </Paper>
 
+      <Box ref={reportRef}>
       <Grid container spacing={3} mb={4}>
         <Grid item xs={12} sm={4} md={3}>
           <StatCard icon={<FaRupeeSign />} label="Total Revenue" value={formatPKR(report.totalSales)} color="#2563eb" />
@@ -228,6 +281,34 @@ const Reports = () => {
           <FaChartArea /> Profit & Loss Trend
         </Typography>
         <SimpleLineChart data={report.graphData} />
+      </Paper>
+
+      {/* Peak Hours Analysis */}
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" fontWeight={600} mb={2} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <FaClock /> Peak Business Hours (Footfall)
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'flex-end', height: 150, gap: 1, overflowX: 'auto', pb: 2 }}>
+          {peakHoursData.length === 0 ? (
+            <Typography color="text.secondary" sx={{ width: '100%', textAlign: 'center', mt: 4 }}>No sales data available</Typography>
+          ) : (
+            peakHoursData.map((d, i) => (
+              <Box key={i} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: 30 }}>
+                <Typography variant="caption" fontWeight={700} color="primary.main">{d.count}</Typography>
+                <Box sx={{ 
+                  width: '100%', 
+                  height: `${Math.max(d.height, 5)}%`, 
+                  bgcolor: d.height > 80 ? '#ef4444' : '#3b82f6', 
+                  borderRadius: '4px 4px 0 0',
+                  transition: 'height 0.5s'
+                }} />
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, mt: 0.5, whiteSpace: 'nowrap', transform: 'rotate(-45deg)', transformOrigin: 'left top' }}>
+                  {d.hourLabel}
+                </Typography>
+              </Box>
+            ))
+          )}
+        </Box>
       </Paper>
 
       {/* Khata Overview Section */}
@@ -381,6 +462,7 @@ const Reports = () => {
           </Table>
         </TableContainer>
       </Paper>
+      </Box>
     </Box>
   );
 };
