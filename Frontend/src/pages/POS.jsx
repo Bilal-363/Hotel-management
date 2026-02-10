@@ -121,7 +121,7 @@ const POS = () => {
         // Map items to API format (clean up extra offline fields)
         const apiItems = items.map(i => ({
           productId: i.productId || i._id,
-          quantity: i.quantity,
+          quantity: evaluateQuantity(i.quantity),
           price: i.price // Send custom price if edited
         }));
 

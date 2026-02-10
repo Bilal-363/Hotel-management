@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { getKhata, addCharge, addInstallments, payInstallment, updateKhata, deleteTransaction } from '../services/khataService';
 import { useReactToPrint } from 'react-to-print';
 import { exportToCSV, exportToXLSX, pagePrintStyle } from '../utils/exportUtils';
+import { addToQueue, processQueue } from '../services/offlineKhata';
 
 const formatPKR = (amount) => `Rs. ${(amount || 0).toLocaleString('en-PK')}`;
 
@@ -115,10 +116,14 @@ const KhataDetail = () => {
   };
 
   useEffect(() => { 
-    load(); 
+    const init = async () => {
+      if (navigator.onLine) await processQueue();
+      load();
+    };
+    init();
     const handleOnline = () => {
       toast.success('Back Online!');
-      load();
+      init();
     };
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
@@ -216,7 +221,10 @@ const KhataDetail = () => {
   };
   const handleInstallments = async () => {
     if (!navigator.onLine) {
-      const payload = installations.map(i => ({ amount: Number(i.amount || '0'), dueDate: i.dueDate, productName: i.productName }));
+      const payload = installations.map(i => {
+        const { value } = calculateExpression(i.amount);
+        return { amount: Number(value || '0'), dueDate: i.dueDate, productName: i.productName };
+      });
       if (payload.some(p => !p.amount || !p.dueDate)) return toast.error('Fill amount and due date');
       
       addToQueue({ type: 'add_installments', khataId: id, data: payload });
@@ -232,7 +240,10 @@ const KhataDetail = () => {
       return;
     }
     try {
-      const payload = installations.map(i => ({ amount: Number(i.amount || '0'), dueDate: i.dueDate, productName: i.productName }));
+      const payload = installations.map(i => {
+        const { value } = calculateExpression(i.amount);
+        return { amount: Number(value || '0'), dueDate: i.dueDate, productName: i.productName };
+      });
       if (payload.some(p => !p.amount || !p.dueDate)) { toast.error('Fill amount and due date'); return; }
       await addInstallments(id, payload);
       toast.success('Installments added');
@@ -252,13 +263,23 @@ const KhataDetail = () => {
 
   const handlePay = async () => {
     if (!navigator.onLine) {
-      const amount = Number(payAmount || '0');
+      const { value } = calculateExpression(payAmount);
+      const amount = Number(value || '0');
       if (!amount || amount <= 0) return toast.error('Invalid amount');
 
       addToQueue({ type: 'pay_installment', installmentId: selectedInstallment._id, data: { amount, note: payNote } });
 
       // Optimistic UI Update
-      const updatedKhata = { ...data.khata, remainingAmount: Math.max(0, data.khata.remainingAmount - amount) };
+      const updatedInstallments = data.khata.installments.map(ins => {
+        if (ins._id === selectedInstallment._id) {
+           const newPaid = (ins.paidAmount || 0) + amount;
+           const newStatus = newPaid >= ins.amount ? 'paid' : 'partial';
+           return { ...ins, paidAmount: newPaid, status: newStatus };
+        }
+        return ins;
+      });
+
+      const updatedKhata = { ...data.khata, remainingAmount: Math.max(0, data.khata.remainingAmount - amount), installments: updatedInstallments };
       const newTx = { _id: `temp_${Date.now()}`, type: 'payment', amount, note: payNote, createdAt: new Date().toISOString() };
       const updatedTxns = [newTx, ...data.transactions];
       
@@ -269,7 +290,8 @@ const KhataDetail = () => {
       setPayOpen(false);
       return;
     }
-    const amount = Number(payAmount || '0');
+    const { value } = calculateExpression(payAmount);
+    const amount = Number(value || '0');
     if (!amount || amount <= 0) { toast.error('Invalid amount'); return; }
     try {
       await payInstallment(selectedInstallment._id, { amount, note: payNote });

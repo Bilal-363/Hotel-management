@@ -76,6 +76,10 @@ const Purchases = () => {
       localStorage.setItem('suppliers_cache', JSON.stringify(supRes.data.suppliers || []));
       localStorage.setItem('products_cache', JSON.stringify(prodRes.data.products || []));
       localStorage.setItem('purchases_cache', JSON.stringify(purRes.data.purchases || []));
+
+      // CRITICAL: Update Dexie DB so POS sees the new stock immediately
+      await db.products.clear();
+      await db.products.bulkAdd(prodRes.data.products || []);
     } catch (err) {
       console.error(err);
       loadFromCache();

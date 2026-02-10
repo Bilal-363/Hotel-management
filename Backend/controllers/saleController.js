@@ -11,7 +11,7 @@ exports.getAllSales = async (req, res) => {
     if (startDate && endDate) {
       query.createdAt = { $gte: new Date(startDate), $lte: new Date(endDate) };
     }
-
+      
     if (paymentMethod) {
       query.paymentMethod = paymentMethod;
     }
@@ -25,7 +25,13 @@ exports.getAllSales = async (req, res) => {
       query.$or = [{ owner: ownerId }, { owner: { $exists: false } }, { owner: null }];
     }
 
-    const sales = await Sale.find(query).sort({ createdAt: -1 }).populate('createdBy', 'name');
+    let salesQuery = Sale.find(query).sort({ createdAt: -1 });
+
+    if (req.query.limit) {
+      salesQuery = salesQuery.limit(parseInt(req.query.limit));
+    }
+
+    const sales = await salesQuery.populate('createdBy', 'name');
     res.status(200).json({ success: true, count: sales.length, sales });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

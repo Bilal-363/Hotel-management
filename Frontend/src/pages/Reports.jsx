@@ -73,7 +73,7 @@ const Reports = () => {
       
       (sale.items || []).forEach(item => {
         // Handle different ID fields (server vs local)
-        const pId = item.product || item.productId || item._id;
+        const pId = (item.product && typeof item.product === 'object' ? item.product._id : item.product) || item.productId || item._id;
         if (!pId) return;
 
         if (!stats[pId]) stats[pId] = { day: 0, week: 0, month: 0, year: 0 };
@@ -125,17 +125,44 @@ const Reports = () => {
     }
 
     try {
-      const [salesRes, expenseRes, productsRes] = await Promise.all([
+      const [salesRes, expenseRes, productsRes, allSalesRes] = await Promise.all([
         api.get(`/dashboard/sales-report${startDate && endDate ? `?startDate=${startDate}&endDate=${endDate}` : ''}`),
         api.get(`/expenses/summary`),
-        api.get('/products')
+        api.get('/products'),
+        api.get('/sales?limit=10000')
       ]);
       const newReport = {
         ...salesRes.data.report,
         totalExpenses: expenseRes.data.totalExpenses || 0
       };
       setReport(newReport);
-      setProducts(productsRes.data.products || []);
+
+      // Update local DB with sales data for performance calculation
+      if (allSalesRes.data.sales) {
+        await db.transaction('rw', db.sales, async () => {
+          await db.sales.where('syncStatus').equals('synced').delete();
+          const salesToCache = allSalesRes.data.sales.map(s => ({ ...s, syncStatus: 'synced' }));
+          await db.sales.bulkAdd(salesToCache);
+        });
+      }
+      
+      // Adjust stock for pending sales to ensure accuracy
+      let fetchedProducts = productsRes.data.products || [];
+      const pendingSales = await db.sales.where('syncStatus').equals('pending').toArray();
+      const pendingQtyMap = {};
+      pendingSales.forEach(sale => {
+        sale.items.forEach(item => {
+          const pid = (item.product && typeof item.product === 'object' ? item.product._id : item.product) || item.productId || item._id;
+          if (pid) pendingQtyMap[pid] = (pendingQtyMap[pid] || 0) + evaluateQuantity(item.quantity);
+        });
+      });
+
+      fetchedProducts = fetchedProducts.map(p => ({
+        ...p,
+        stock: Math.round((p.stock - (pendingQtyMap[p._id] || 0)) * 1000000) / 1000000
+      }));
+
+      setProducts(fetchedProducts);
 
       // Only cache if it's the default view (no dates)
       if (!startDate && !endDate) {

@@ -8,6 +8,15 @@ import { db, resetDatabase } from '../db';
 import { useReactToPrint } from 'react-to-print';
 import { exportToCSV, exportToXLSX, pagePrintStyle } from '../utils/exportUtils';
 
+const evaluateQuantity = (qty) => {
+  if (typeof qty === 'string' && qty.includes('/')) {
+    const [n, d] = qty.split('/');
+    if (!d || Number(d) === 0) return 0;
+    return Number(n) / Number(d);
+  }
+  return parseFloat(qty) || 0;
+};
+
 const Sales = () => {
   // const [sales, setSales] = useState([]); // Removed local state
   const [loading, setLoading] = useState(true);
@@ -68,7 +77,7 @@ const Sales = () => {
         for (const sale of pendingSales) {
           try {
             const { id, syncStatus, invoiceNumber, items, ...rest } = sale;
-            const apiItems = items.map(i => ({ productId: i.productId || i._id, quantity: i.quantity, price: i.price }));
+            const apiItems = items.map(i => ({ productId: i.productId || i._id, quantity: evaluateQuantity(i.quantity), price: i.price }));
             
             const res = await api.post('/sales', { ...rest, items: apiItems });
             
@@ -86,6 +95,9 @@ const Sales = () => {
       if (startDate && endDate) {
         url += `?startDate=${startDate}&endDate=${endDate}`;
       }
+      // Ensure we get a reasonable amount of history if no date filter, or all matching date filter
+      url += (url.includes('?') ? '&' : '?') + 'limit=1000';
+      
       const res = await api.get(url);
       
       if (res.data.sales) {
@@ -141,6 +153,18 @@ const Sales = () => {
       // Remove from local DB
       // We use the local 'id' which is always present
       if (selectedSale.id) {
+        // CRITICAL: If this was a pending offline sale, we must restore the stock locally
+        if (selectedSale.syncStatus === 'pending') {
+          await db.transaction('rw', db.products, async () => {
+            for (const item of selectedSale.items) {
+              const product = await db.products.get({ _id: item.productId || item.product });
+              if (product) {
+                const qty = Number(item.quantity) || 0;
+                await db.products.update(product.id, { stock: product.stock + qty });
+              }
+            }
+          });
+        }
         await db.sales.delete(selectedSale.id);
       }
 
@@ -189,6 +213,21 @@ const Sales = () => {
           .map(s => api.delete(`/sales/${s._id}`));
           
         await Promise.all(apiDeletes);
+
+        // Restore stock for pending sales being deleted
+        const pendingToDelete = salesToDelete.filter(s => s.syncStatus === 'pending');
+        if (pendingToDelete.length > 0) {
+          await db.transaction('rw', db.products, async () => {
+            for (const sale of pendingToDelete) {
+              for (const item of sale.items) {
+                const product = await db.products.get({ _id: item.productId || item.product });
+                if (product) {
+                  await db.products.update(product.id, { stock: product.stock + (Number(item.quantity) || 0) });
+                }
+              }
+            }
+          });
+        }
         
         // Delete all from local DB
         await db.sales.bulkDelete(selectedSales);
